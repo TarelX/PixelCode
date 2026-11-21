@@ -23,3 +23,11 @@
 .task-detail dl > div { margin-bottom: 20px; }
 .task-detail dt, .task-detail h3 { color: var(--ui-muted); font-size: 11px; margin: 0 0 8px; }
 .task-detail dd { margin: 0; white-space: pre-wrap; line-height: 1.7; }
+.wall-gate { margin-top: 16px; padding: 16px; border-left: 4px solid var(--ui-accent); background: var(--ui-raised); }
+.wall-gate h3 { margin: 0; font-size: 14px; }
+.wall-gate p { margin: 8px 0 12px; color: var(--ui-muted); }
+.wall-gate ul { padding-inline-start: 20px; overflow-wrap: anywhere; }
+.wall-gate__actions, .wall-assignment { display: flex; flex-wrap: wrap; gap: 8px; }
+.wall-assignment { margin: 0 0 20px; border: 1px solid var(--ui-border); padding: 12px; }
+.wall-assignment legend { color: var(--ui-muted); }
+.wall-assignment [aria-pressed="true"] { border-color: var(--ui-accent); color: var(--ui-accent); }

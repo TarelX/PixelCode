@@ -1,11 +1,11 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io::Read,
     path::Path,
     process::{Command, Stdio},
 };
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, WebviewWindow};
 
@@ -19,6 +19,7 @@ use crate::{
 
 #[derive(Clone, Serialize)]
 struct TaskEvent {
+    camp_id: String,
     plan_id: String,
     task_id: String,
     status: String,
@@ -38,19 +39,21 @@ fn db_error(error: rusqlite::Error) -> String {
     format!("无法更新锦囊执行记录：{error}")
 }
 
-fn prepare(conn: &mut Connection, camp: &str, id: &str) -> Result<Plan, String> {
-    let tx = conn.transaction().map_err(db_error)?;
-    let json: String = tx
-        .query_row(
-            "SELECT plan_json FROM plans WHERE id=?1 AND camp_id=?2 AND status='approved'",
-            params![id, camp],
-            |row| row.get(0),
-        )
-        .map_err(|_| "计划不存在、不属于此大营或尚未点将批准")?;
+fn approve(
+    conn: &mut Connection,
+    camp: &str,
+    id: &str,
+    assignments: &HashMap<String, String>,
+) -> Result<Plan, String> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(db_error)?;
+    let mut plan = plans::latest(&tx, camp)?
+        .filter(|stored| stored.id == id && stored.status == "draft")
+        .ok_or("只有当前大营最新的待点将草案可以批准")?
+        .plan;
     let roster = roles::planning_roster(&tx, camp)?;
-    let plans::Reply::Draft(mut plan) = plans::parse(&json, &roster, None)? else {
-        return Err("批准的计划不是锦囊草案".into());
-    };
+    plan.assign(assignments, &roster)?;
     for task in &mut plan.tasks {
         task.status = Some("pending".into());
     }
@@ -77,6 +80,19 @@ fn prepare(conn: &mut Connection, camp: &str, id: &str) -> Result<Plan, String> 
     }
     tx.commit().map_err(db_error)?;
     Ok(plan)
+}
+
+fn finish(conn: &Connection, id: &str, succeeded: bool) -> Result<(), String> {
+    conn.execute(
+        "UPDATE plans SET status=CASE
+            WHEN ?2 AND EXISTS (SELECT 1 FROM tasks WHERE plan_id=?1)
+                AND NOT EXISTS (SELECT 1 FROM tasks WHERE plan_id=?1 AND status<>'done')
+            THEN 'awaiting_delivery' ELSE 'aborted' END
+         WHERE id=?1 AND status='executing'",
+        params![id, succeeded],
+    )
+    .map_err(db_error)?;
+    Ok(())
 }
 
 fn order(plan: &Plan) -> Result<Vec<usize>, String> {
@@ -188,6 +204,7 @@ fn execute(
     let mut completed = HashSet::new();
     for task in &plan.tasks {
         runner.emit(&TaskEvent {
+            camp_id: camp.into(),
             plan_id: id.into(),
             task_id: format!("{id}-{}", task.id),
             status: "pending".into(),
@@ -202,6 +219,7 @@ fn execute(
             return Ok(());
         }
         let mut event = TaskEvent {
+            camp_id: camp.into(),
             plan_id: id.into(),
             task_id: format!("{id}-{}", task.id),
             status: "pending".into(),
@@ -432,14 +450,15 @@ impl Runner for LiveRunner<'_> {
 }
 
 #[tauri::command]
-pub async fn start_plan_execution(
+pub async fn approve_plan_execution(
     window: WebviewWindow,
     camp_id: String,
     plan_id: String,
+    assignments: HashMap<String, String>,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let slot = window.state::<RunSlot>();
-        let _active = slot.acquire()?;
+        let active = slot.acquire()?;
         let data_dir = window
             .path()
             .app_data_dir()
@@ -450,8 +469,8 @@ pub async fn start_plan_execution(
             .map_err(db_error)?;
         let cwd = camps::run_root(&conn, &camp_id)?;
         let root = window.state::<artifacts::ArtifactRoot>();
-        let plan = prepare(&mut conn, &camp_id, &plan_id)?;
-        execute(
+        let plan = approve(&mut conn, &camp_id, &plan_id, &assignments)?;
+        let result = execute(
             &conn,
             &root.0,
             &camp_id,
@@ -464,7 +483,12 @@ pub async fn start_plan_execution(
                 slot: &slot,
                 window: &window,
             },
-        )
+        );
+        let final_status = finish(&conn, &plan_id, result.is_ok() && !slot.is_stopped());
+        drop(active);
+        let _ = window.emit_to(window.label(), "plan-state", &camp_id);
+        final_status?;
+        result
     })
     .await
     .map_err(|e| format!("锦囊执行失败：{e}"))?
@@ -534,8 +558,12 @@ mod tests {
 
     fn connection(status: &str) -> Connection {
         let conn = roles::tests::connection();
-        conn.execute("INSERT INTO plans (id,camp_id,scenario,user_request,plan_json,status) VALUES ('plan','camp','bug-fix','fix',?1,?2)", params![include_str!("../../tests/scheduler/captain-plan.json"), status]).unwrap();
+        conn.execute("INSERT INTO plans (id,camp_id,scenario,user_request,plan_json,status,created_at) VALUES ('plan','camp','bug-fix','fix',?1,?2,1)", params![include_str!("../../tests/scheduler/captain-plan.json"), status]).unwrap();
         conn
+    }
+
+    fn prepare(conn: &mut Connection, camp: &str, id: &str) -> Result<Plan, String> {
+        approve(conn, camp, id, &HashMap::new())
     }
 
     fn run(fake: &mut Fake) -> Connection {
@@ -548,10 +576,11 @@ mod tests {
                 std::process::id(),
                 NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
-        let mut conn = connection("approved");
+        let mut conn = connection("draft");
         let plan = prepare(&mut conn, "camp", "plan").unwrap();
         let result = execute(&conn, &root, "camp", "plan", &plan, fake);
         assert_eq!(result.is_err(), fake.error);
+        finish(&conn, "plan", result.is_ok() && !fake.stopped()).unwrap();
         if root.exists() {
             std::fs::remove_dir_all(root).unwrap();
         }
@@ -586,7 +615,7 @@ mod tests {
 
     #[test]
     fn prepare_resets_existing_json_statuses_and_transitions_are_atomic() {
-        let mut conn = connection("approved");
+        let mut conn = connection("draft");
         let json: String = conn
             .query_row("SELECT plan_json FROM plans", [], |row| row.get(0))
             .unwrap();
@@ -603,6 +632,7 @@ mod tests {
         assert_eq!(state(&conn, "fix").0, "pending");
         assert_eq!(state(&conn, "reproduce").0, "pending");
         let mut event = TaskEvent {
+            camp_id: "camp".into(),
             plan_id: "plan".into(),
             task_id: "plan-reproduce".into(),
             status: "pending".into(),
@@ -681,13 +711,13 @@ mod tests {
         assert_eq!(
             conn.query_row("SELECT status FROM plans", [], |r| r.get::<_, String>(0))
                 .unwrap(),
-            "executing"
+            "awaiting_delivery"
         );
     }
 
     #[test]
     fn four_check_failures_block_and_leave_dependents_pending() {
-        let mut conn = connection("approved");
+        let mut conn = connection("draft");
         let mut plan = prepare(&mut conn, "camp", "plan").unwrap();
         plan.tasks[1].check_command = plan.tasks[0].check_command.take();
         let root = std::env::current_dir()
@@ -698,8 +728,13 @@ mod tests {
             ..Fake::default()
         };
         execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+        finish(&conn, "plan", true).unwrap();
         assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 4, 0));
         assert_eq!(state(&conn, "fix").0, "pending");
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "aborted"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -727,17 +762,19 @@ mod tests {
     }
 
     #[test]
-    fn refuses_unapproved_or_foreign_plan_without_changes() {
-        for status in ["draft", "executing", "completed", "approved"] {
+    fn refuses_foreign_or_non_draft_plan_without_changes() {
+        for status in [
+            "draft",
+            "executing",
+            "awaiting_delivery",
+            "completed",
+            "aborted",
+        ] {
             let mut conn = connection(status);
             assert!(
                 prepare(
                     &mut conn,
-                    if status == "approved" {
-                        "other"
-                    } else {
-                        "camp"
-                    },
+                    if status == "draft" { "other" } else { "camp" },
                     "plan"
                 )
                 .is_err()
@@ -751,8 +788,29 @@ mod tests {
     }
 
     #[test]
+    fn approval_validates_assignments_and_cannot_run_twice() {
+        let mut conn = connection("draft");
+        let assignment = |role: &str| HashMap::from([("fix".to_string(), role.to_string())]);
+        assert!(approve(&mut conn, "camp", "plan", &assignment("unknown")).is_err());
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "draft"
+        );
+        let plan = approve(&mut conn, "camp", "plan", &assignment("frontend")).unwrap();
+        assert_eq!(plan.tasks[0].role_id, "frontend");
+        assert_eq!(
+            conn.query_row("SELECT role_id FROM tasks WHERE id='plan-fix'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+            "frontend"
+        );
+        assert!(prepare(&mut conn, "camp", "plan").is_err());
+    }
+
+    #[test]
     fn reviewer_tasks_skip_review_and_empty_outputs_use_fallback() {
-        let mut conn = connection("approved");
+        let mut conn = connection("draft");
         let mut plan = prepare(&mut conn, "camp", "plan").unwrap();
         plan.tasks.remove(0);
         plan.tasks[0].role_id = "reviewer".into();
@@ -794,6 +852,10 @@ mod tests {
                 if stop { "pending" } else { "failed" }
             );
             assert_eq!(state(&conn, "fix").0, "pending");
+            assert_eq!(
+                plans::latest(&conn, "camp").unwrap().unwrap().status,
+                "aborted"
+            );
             let message: String = conn
                 .query_row("SELECT content FROM messages LIMIT 1", [], |r| r.get(0))
                 .unwrap();

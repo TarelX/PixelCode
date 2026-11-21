@@ -25,10 +25,12 @@ pub fn run() {
             roles::save_role,
             roles::delete_role,
             supervisor::start_role_run,
-            scheduler::start_plan_execution,
+            scheduler::approve_plan_execution,
             artifacts::read_artifact,
             artifacts::list_artifacts,
             plans::latest_plan,
+            plans::reject_plan,
+            plans::decide_delivery,
             supervisor::stop_role_run
         ])
         .setup(|app| {

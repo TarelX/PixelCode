@@ -10,18 +10,25 @@ use crate::{artifacts, roles::PlanningRole};
 
 #[derive(Serialize)]
 pub(crate) struct StoredPlan {
-    id: String,
-    status: String,
+    pub(crate) id: String,
+    pub(crate) status: String,
     scenario: String,
     user_request: String,
     created_at: i64,
-    plan: Plan,
+    pub(crate) plan: Plan,
+    execution_message: Option<String>,
 }
 
-fn latest(conn: &Connection, camp_id: &str) -> Result<Option<StoredPlan>, String> {
+pub(crate) fn latest(conn: &Connection, camp_id: &str) -> Result<Option<StoredPlan>, String> {
     conn.query_row(
-        "SELECT id, status, scenario, user_request, created_at, plan_json FROM plans
-         WHERE camp_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        "SELECT id, status, scenario, user_request, created_at, plan_json,
+            CASE WHEN status='aborted' THEN (
+                SELECT messages.content FROM tasks JOIN messages ON tasks.id=messages.task_id
+                WHERE tasks.plan_id=plans.id AND messages.type='scheduler'
+                ORDER BY messages.rowid DESC LIMIT 1
+            ) END
+         FROM plans WHERE camp_id = ?1
+         ORDER BY status IN ('executing','awaiting_delivery') DESC, created_at DESC, rowid DESC LIMIT 1",
         [camp_id],
         |row| {
             let json: String = row.get(5)?;
@@ -39,6 +46,7 @@ fn latest(conn: &Connection, camp_id: &str) -> Result<Option<StoredPlan>, String
                 user_request: row.get(3)?,
                 created_at: row.get(4)?,
                 plan,
+                execution_message: row.get(6)?,
             })
         },
     )
@@ -53,6 +61,46 @@ pub(crate) fn latest_plan(
 ) -> Result<Option<StoredPlan>, String> {
     let conn = conn.lock().map_err(|error| error.to_string())?;
     latest(&conn, &camp_id)
+}
+
+fn decide(conn: &Connection, camp: &str, id: &str, from: &str, to: &str) -> Result<(), String> {
+    let changed = conn
+        .execute(
+            "UPDATE plans SET status=?4 WHERE camp_id=?1 AND id=?2 AND status=?3",
+            params![camp, id, from, to],
+        )
+        .map_err(|error| format!("无法更新计划确认状态：{error}"))?;
+    if changed != 1 {
+        return Err("计划状态已变更或不属于此大营，请重新打开锦囊墙".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn reject_plan(
+    conn: tauri::State<'_, std::sync::Mutex<Connection>>,
+    camp_id: String,
+    plan_id: String,
+) -> Result<(), String> {
+    let conn = conn.lock().map_err(|error| error.to_string())?;
+    decide(&conn, &camp_id, &plan_id, "draft", "aborted")
+}
+
+#[tauri::command]
+pub(crate) fn decide_delivery(
+    conn: tauri::State<'_, std::sync::Mutex<Connection>>,
+    camp_id: String,
+    plan_id: String,
+    accepted: bool,
+) -> Result<(), String> {
+    let conn = conn.lock().map_err(|error| error.to_string())?;
+    decide(
+        &conn,
+        &camp_id,
+        &plan_id,
+        "awaiting_delivery",
+        if accepted { "completed" } else { "aborted" },
+    )
 }
 
 #[derive(Deserialize, Serialize)]
@@ -177,6 +225,25 @@ pub(crate) fn parse(
 }
 
 impl Plan {
+    pub(crate) fn assign(
+        &mut self,
+        assignments: &HashMap<String, String>,
+        roster: &[PlanningRole],
+    ) -> Result<(), String> {
+        for (id, role) in assignments {
+            let task = self
+                .tasks
+                .iter_mut()
+                .find(|task| &task.id == id)
+                .ok_or_else(|| format!("计划中未找到锦囊：{id}"))?;
+            task.role_id.clone_from(role);
+            if !self.recruited_roles.contains(role) {
+                self.recruited_roles.push(role.clone());
+            }
+        }
+        self.validate(roster)
+    }
+
     fn validate(&self, roster: &[PlanningRole]) -> Result<(), String> {
         if self.scenario.trim().is_empty() || self.tasks.is_empty() {
             return Err("草案必须包含任务类型和至少一张锦囊".into());
@@ -331,6 +398,16 @@ mod tests {
             serde_json::to_value(stored.plan).unwrap(),
             serde_json::from_str::<Value>(fixture).unwrap()
         );
+        assert!(decide(&conn, "camp", "old", "awaiting_delivery", "completed").is_err());
+        conn.execute(
+            "UPDATE plans SET status='awaiting_delivery' WHERE id='old'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(latest(&conn, "camp").unwrap().unwrap().id, "old");
+        assert!(decide(&conn, "other", "old", "awaiting_delivery", "completed").is_err());
+        decide(&conn, "camp", "old", "awaiting_delivery", "completed").unwrap();
+        assert!(decide(&conn, "camp", "old", "awaiting_delivery", "completed").is_err());
         conn.execute("UPDATE plans SET plan_json = '{}' WHERE id = 'new'", [])
             .unwrap();
         assert!(latest(&conn, "camp").is_err());

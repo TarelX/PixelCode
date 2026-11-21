@@ -5,7 +5,14 @@
     "description": "任务描述", "role": "领命名将", "dependencies": "前置锦囊", "inputs": "输入产物", "outputs": "输出产物",
     "acceptance": "验收标准", "check": "检查命令 · 仅展示", "program": "程序", "args": "参数数组", "none": "无",
     "statuses": { "pending": "待命", "running": "执行中", "checking": "检查中", "reviewing": "审查中", "done": "已完成", "blocked": "受阻", "failed": "失败" },
-    "planStatuses": { "draft": "草案 · 未执行", "approved": "已确认", "executing": "执行中", "completed": "已完成", "aborted": "已中止" }
+    "planStatuses": { "draft": "草案 · 未执行", "approved": "已确认", "executing": "执行中", "awaiting_delivery": "待交付确认", "completed": "已交付", "aborted": "已中止" },
+    "gate": {
+      "approvalTitle": "点将 · 方案确认", "deliveryTitle": "交付 · 成果确认",
+      "approvalHint": "打开锦囊可调整领命名将。批准后，所选名将将在项目目录执行任务，调度器将运行下列检查命令（如有）。",
+      "deliveryHint": "所有锦囊均已通过。打开锦囊可查看产物、检查记录和审查意见。确认仅记录交付，不会提交、合并或撤销项目改动。",
+      "approve": "批准并执行", "rejectDraft": "拒绝草案", "deliver": "确认交付", "rejectDelivery": "拒绝交付",
+      "assign": "调整领命名将", "backToWall": "返回锦囊墙"
+    }
   },
   "artifactTitle": "产物查看",
   "artifactView": "查看产物",
@@ -27,7 +34,7 @@
   "planPrompt": "任务需求",
   "planPlaceholder": "描述遇到的问题、预期结果或项目目标…",
   "planStart": "生成锦囊草案",
-  "planDraft": "锦囊草案 · 未执行",
+  "planDraft": "锦囊草案 · 原始产物",
   "planQuestions": "队长需要确认几件事",
   "planAnswer": "补充说明",
   "planContinue": "继续拟定",
