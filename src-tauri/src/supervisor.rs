@@ -14,6 +14,19 @@ use crate::{
 };
 
 const ROLE_RUN_EVENT: &str = "role-run";
+pub(crate) fn dispatch(
+    cli: &str,
+    options: claude_code::StartOptions<'_>,
+    state: &RunSlot,
+    emit: &impl Fn(RunUpdate) -> Result<(), String>,
+) -> Result<String, String> {
+    match cli {
+        "claude-code" => claude_code::start(options, state, emit),
+        "codex" => codex::start(options, state, emit),
+        _ => Err(format!("不支持的 CLI：{cli}")),
+    }
+}
+
 static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Default)]
@@ -24,6 +37,19 @@ pub(crate) struct RunSlot {
 }
 
 impl RunSlot {
+    pub(crate) fn acquire(&self) -> Result<std::sync::MutexGuard<'_, ()>, String> {
+        let guard = self.active.try_lock().map_err(|error| match error {
+            TryLockError::WouldBlock => "已有角色正在运行",
+            TryLockError::Poisoned(_) => "无法访问角色运行状态",
+        })?;
+        self.stopped.store(false, Ordering::SeqCst);
+        Ok(guard)
+    }
+
+    pub(crate) fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::SeqCst)
+    }
+
     pub fn attach(&self, mut process: Child) -> Result<(), String> {
         let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
         if self.stopped.load(Ordering::SeqCst) {
@@ -153,11 +179,7 @@ pub async fn start_role_run(
     }
     tauri::async_runtime::spawn_blocking(move || {
         let state = window.state::<RunSlot>();
-        let _active = state.active.try_lock().map_err(|error| match error {
-            TryLockError::WouldBlock => "已有角色正在运行",
-            TryLockError::Poisoned(_) => "无法访问角色运行状态",
-        })?;
-        state.stopped.store(false, Ordering::SeqCst);
+        let _active = state.acquire()?;
         let (cwd, mut config, roster) = {
             let state = window.state::<Mutex<Connection>>();
             let connection = state.lock().map_err(|_| "无法访问大营数据库")?;
@@ -215,11 +237,7 @@ pub async fn start_role_run(
             prompt: input.as_deref().unwrap_or(&prompt),
             permissions: &config.permissions,
         };
-        let result = match config.cli.as_str() {
-            "claude-code" => claude_code::start(options, &state, &emit),
-            "codex" => codex::start(options, &state, &emit),
-            _ => Err(format!("不支持的 CLI：{}", config.cli)),
-        };
+        let result = dispatch(&config.cli, options, &state, &emit);
         if state.stopped.load(Ordering::SeqCst) {
             emit(RunUpdate::Stopped)?;
             return Ok(None);

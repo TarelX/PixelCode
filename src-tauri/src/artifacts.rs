@@ -24,7 +24,7 @@ pub struct Artifact {
 #[derive(Serialize)]
 pub struct ArtifactContent {
     artifact: Artifact,
-    content: String,
+    pub(crate) content: String,
 }
 
 const OUTSIDE: &str = "产物路径越出允许目录";
@@ -141,7 +141,7 @@ fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
     })
 }
 
-fn read(conn: &Connection, root: &Path, id: &str) -> Result<ArtifactContent, String> {
+pub(crate) fn read(conn: &Connection, root: &Path, id: &str) -> Result<ArtifactContent, String> {
     let mut artifact = conn.query_row("SELECT id, task_id, type, file_path, content_preview, created_at FROM artifacts WHERE id = ?1", [id], from_row).map_err(|e| format!("无法读取产物记录：{e}"))?;
     artifact.absolute_path = checked(root, &resolve(root, Path::new(&artifact.file_path))?)?;
     let content =

@@ -294,7 +294,7 @@ pub(crate) fn run_config(
 #[derive(Serialize)]
 pub(crate) struct PlanningRole {
     pub id: String,
-    role_type: String,
+    pub(crate) role_type: String,
     title: Option<String>,
     task_types: Vec<String>,
 }
