@@ -1,4 +1,7 @@
-use std::{path::Path, sync::Mutex};
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use rusqlite::{Connection, params};
 use serde::Serialize;
@@ -63,6 +66,27 @@ fn recent_camps(connection: &Connection) -> Result<Vec<Camp>, String> {
         .map_err(database_error)?
         .collect::<rusqlite::Result<_>>()
         .map_err(database_error)
+}
+
+pub(crate) fn run_root(connection: &Connection, camp_id: &str) -> Result<PathBuf, String> {
+    let stored: String = connection
+        .query_row(
+            "SELECT root_path FROM camps WHERE id = ?1",
+            [camp_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => "未找到要运行的大营".into(),
+            error => database_error(error),
+        })?;
+    let path = Path::new(&stored);
+    let root = path
+        .canonicalize()
+        .map_err(|error| format!("无法打开大营目录：{error}"))?;
+    if root != path || !root.is_dir() {
+        return Err("大营目录已更改，请重新选择大营".into());
+    }
+    Ok(root)
 }
 
 #[tauri::command]
@@ -130,6 +154,22 @@ mod tests {
             camp.root_path,
             fixture.0.canonicalize().unwrap().to_str().unwrap()
         );
+    }
+
+    #[test]
+    fn run_root_requires_a_saved_directory() {
+        let fixture = Fixture::new();
+        let connection = crate::db::open(&fixture.0).unwrap();
+        let directory = fixture.0.join("camp");
+        std::fs::create_dir(&directory).unwrap();
+        let camp = save_camp(&connection, &directory).unwrap();
+        assert_eq!(
+            run_root(&connection, &camp.id).unwrap(),
+            directory.canonicalize().unwrap()
+        );
+        assert!(run_root(&connection, "missing").is_err());
+        std::fs::remove_dir(&directory).unwrap();
+        assert!(run_root(&connection, &camp.id).is_err());
     }
 
     #[test]

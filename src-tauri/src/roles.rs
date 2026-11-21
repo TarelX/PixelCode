@@ -71,8 +71,8 @@ pub struct Loadout {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Permissions {
-    allow: Vec<String>,
-    deny: Vec<String>,
+    pub(crate) allow: Vec<String>,
+    pub(crate) deny: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -220,6 +220,33 @@ fn effective_roles(
     Ok(roles)
 }
 
+pub(crate) fn claude_config(
+    connection: &Connection,
+    camp_id: &str,
+    role_id: &str,
+    loadout_index: usize,
+) -> Result<(String, String, Permissions), String> {
+    let role = effective_roles(connection, Some(camp_id))?
+        .into_iter()
+        .find(|role| role.id == role_id)
+        .ok_or("未找到要运行的角色")?;
+    let loadout = role
+        .loadouts
+        .get(loadout_index)
+        .filter(|loadout| loadout.cli == "claude-code")
+        .ok_or("请选择角色的 Claude Code 武器槽")?;
+    let mut system_prompt = role.personality;
+    for id in role.skills {
+        let (_, text) = SKILLS
+            .iter()
+            .find(|(skill, _)| *skill == id)
+            .ok_or_else(|| format!("未找到内置技能：{id}"))?;
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(text);
+    }
+    Ok((loadout.model.clone(), system_prompt, role.permissions))
+}
+
 fn upsert(connection: &Connection, role: &RoleConfig, camp_id: Option<&str>) -> Result<(), String> {
     validate(role)?;
     connection
@@ -324,6 +351,35 @@ mod tests {
         let test = skills.iter().find(|s| s.id == "test-writing").unwrap();
         assert_eq!(test.summary, "测试编写规范");
         assert!(skills.iter().all(|s| !s.summary.is_empty()));
+    }
+
+    #[test]
+    fn claude_config_uses_camp_override_and_selected_loadout() {
+        let connection = connection();
+        let mut role = presets().unwrap().remove(0);
+        role.personality = "Camp persona".into();
+        role.skills = vec!["test-writing".into()];
+        role.loadouts[0].model = "haiku".into();
+        role.permissions.allow = vec!["Read".into()];
+        upsert(&connection, &role, Some("camp")).unwrap();
+        let (model, system_prompt, permissions) =
+            claude_config(&connection, "camp", &role.id, 0).unwrap();
+        assert_eq!(model, "haiku");
+        assert_eq!(
+            system_prompt,
+            format!(
+                "Camp persona\n\n{}",
+                include_str!("../../skills/test-writing/SKILL.md")
+            )
+        );
+        assert_eq!(permissions.allow, ["Read"]);
+        assert_eq!(
+            claude_config(&connection, "another-camp", &role.id, 0)
+                .unwrap()
+                .0,
+            "sonnet"
+        );
+        assert!(claude_config(&connection, "camp", &role.id, 1).is_err());
     }
 
     #[test]

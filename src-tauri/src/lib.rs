@@ -21,12 +21,14 @@ pub fn run() {
             roles::list_roles,
             roles::list_skills,
             roles::save_role,
-            roles::delete_role
+            roles::delete_role,
+            supervisor::start_role_run
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let connection = db::open(&data_dir)?;
             app.manage(Mutex::new(connection));
+            app.manage(supervisor::RunSlot::default());
             Ok(())
         })
         .run(tauri::generate_context!())
