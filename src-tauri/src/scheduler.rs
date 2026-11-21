@@ -191,6 +191,16 @@ fn parse_review(text: &str) -> Option<Review> {
         })
 }
 
+const REVIEW_VERDICT: &str = r#"不得修改文件。最后仅返回单行 JSON，例如 {"verdict":"approve","reason":"原因"}。verdict 必须为 approve 或 reject。"#;
+
+fn review_rejection(text: &str) -> Option<String> {
+    match parse_review(text) {
+        Some(review) if review.verdict == "approve" => None,
+        Some(review) => Some(review.reason),
+        None => Some("审查员未返回有效的 verdict/reason JSON".into()),
+    }
+}
+
 fn execute(
     conn: &Connection,
     root: &Path,
@@ -228,6 +238,9 @@ fn execute(
             message: None,
         };
         let result = (|| {
+            let is_reviewer = roster
+                .iter()
+                .any(|role| role.id == task.role_id && role.role_type == "reviewer");
             let mut prompt = format!(
                 "{}\n{}\n验收标准：{}",
                 task.title, task.description, task.acceptance_criteria
@@ -255,6 +268,9 @@ fn execute(
                 if !found {
                     return Err(format!("已完成的依赖锦囊缺少输入产物：{name}"));
                 }
+            }
+            if is_reviewer {
+                prompt.push_str(&format!("\n{REVIEW_VERDICT}"));
             }
             let mut feedback = String::new();
             loop {
@@ -308,13 +324,27 @@ fn execute(
                         continue;
                     }
                 }
-                if !roster
-                    .iter()
-                    .any(|role| role.id == task.role_id && role.role_type == "reviewer")
-                {
+                if is_reviewer {
+                    if let Some(reason) = review_rejection(&output) {
+                        event.review_rounds += 1;
+                        status(
+                            conn,
+                            runner,
+                            &mut event,
+                            "blocked",
+                            Some(format!("审查未通过：{reason}")),
+                        )?;
+                        return Ok(None);
+                    }
+                } else {
                     let reviewer = reviewer.ok_or("大营缺少审查员角色")?;
                     status(conn, runner, &mut event, "reviewing", None)?;
-                    let text = runner.run(&reviewer.id, &format!("审查以下任务及产物，不得修改文件。最后仅返回 JSON {{\"verdict\":\"approve\"或\"reject\",\"reason\":\"原因\"}}。\n{prompt}\n角色产物：\n{output}"))?;
+                    let text = runner.run(
+                        &reviewer.id,
+                        &format!(
+                            "审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"
+                        ),
+                    )?;
                     if runner.stopped() {
                         return Ok(None);
                     }
@@ -327,15 +357,9 @@ fn execute(
                         Path::new("review.md"),
                         &text,
                     )?;
-                    let review = parse_review(&text);
-                    if !review.as_ref().is_some_and(|r| r.verdict == "approve") {
+                    if let Some(reason) = review_rejection(&text) {
                         event.review_rounds += 1;
-                        feedback = format!(
-                            "审查打回，请返工：{}",
-                            review
-                                .map(|r| r.reason)
-                                .unwrap_or_else(|| "审查员未返回有效的 verdict/reason JSON".into())
-                        );
+                        feedback = format!("审查打回，请返工：{reason}");
                         if event.review_rounds > 3 {
                             status(conn, runner, &mut event, "blocked", Some(feedback))?;
                             return Ok(None);
@@ -517,6 +541,7 @@ mod tests {
                 return Err("无法启动角色 CLI".into());
             }
             if role == "reviewer" {
+                assert!(prompt.contains(REVIEW_VERDICT));
                 if self.invalid_review {
                     return Ok("not JSON".into());
                 }
@@ -835,6 +860,47 @@ mod tests {
                 .iter()
                 .any(|event| event.status == "reviewing")
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reviewer_task_requires_approval_before_delivery() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target/scheduler-reviewer-verdict-test");
+        for (rejects, invalid_review, reason) in [
+            (1, false, "审查说明"),
+            (0, true, "审查员未返回有效的 verdict/reason JSON"),
+        ] {
+            let mut conn = connection("draft");
+            let plan = approve(
+                &mut conn,
+                "camp",
+                "plan",
+                &HashMap::from([("reproduce".into(), "reviewer".into())]),
+            )
+            .unwrap();
+            let mut fake = Fake {
+                rejects,
+                invalid_review,
+                ..Fake::default()
+            };
+
+            execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+            finish(&conn, "plan", true).unwrap();
+
+            assert_eq!(fake.runs, ["reviewer"]);
+            assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 0, 1));
+            assert_eq!(state(&conn, "fix").0, "pending");
+            assert_eq!(
+                plans::latest(&conn, "camp").unwrap().unwrap().status,
+                "aborted"
+            );
+            assert_eq!(
+                fake.events.borrow().last().unwrap().message.as_deref(),
+                Some(format!("审查未通过：{reason}").as_str())
+            );
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
 
