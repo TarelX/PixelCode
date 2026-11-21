@@ -12,6 +12,7 @@ import { RoleRoster } from "./RoleRoster";
 import { TaskPanel } from "./TaskPanel";
 import { RunBubble } from "./RunBubble";
 import { listenToRuns, useRuns } from "../camp/run";
+import type { BubbleAnchor } from "../camp/bubble";
 import theme from "../../themes/three-kingdoms/ui.json";
 
 function drawMarker(color: string) {
@@ -37,7 +38,7 @@ export function CampView() {
   const [card, setCard] = useState<{ role: RoleConfig | null } | null>(null);
   const runs = useRuns((s) => s.runs);
   const [listening, setListening] = useState(false);
-  const [anchors, setAnchors] = useState<Record<string, { x: number; y: number }>>({});
+  const [anchors, setAnchors] = useState<Record<string, BubbleAnchor>>({});
 
   useEffect(() => {
     if (!camp) return;
@@ -57,8 +58,10 @@ export function CampView() {
       const bounds = canvas.getBoundingClientRect();
       const parent = host.getBoundingClientRect();
       setAnchors(Object.fromEntries((generalsRef.current?.generals ?? []).map((general) => [general.role.id, {
-        x: Math.round(Math.max(114, Math.min(parent.width - 114, bounds.left - parent.left + general.x * stage.scale.x))),
-        y: Math.round(bounds.top - parent.top + (general.y - 26) * stage.scale.y),
+        x: Math.round(general.x * stage.scale.x),
+        y: Math.round((general.y - 26) * stage.scale.y),
+        footY: Math.round(general.y * stage.scale.y),
+        canvas: { left: bounds.left - parent.left, top: bounds.top - parent.top, width: bounds.width, height: bounds.height },
       }])));
     };
     const observer = new ResizeObserver(position);
@@ -211,7 +214,7 @@ export function CampView() {
       {(roleError || error) && <p role="alert">{roleError || error}</p>}
       <div className="camp-body">
         <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef}>
-          <div className="run-overlay">{Object.entries(runs).map(([id, run]) => anchors[id] && <RunBubble key={id} id={id} run={run} {...anchors[id]} />)}</div>
+          <div className="run-overlay">{Object.entries(runs).map(([id, run]) => anchors[id] && <RunBubble key={id} id={id} run={run} anchor={anchors[id]} />)}</div>
         </div></div>
         <RoleRoster onOpen={openCard} />
       </div>

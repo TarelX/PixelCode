@@ -2,6 +2,7 @@ use super::{DetectResult, detect_with, run};
 use crate::{roles::Permissions, supervisor::RunUpdate};
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     io::{self, BufRead, BufReader, Read, Write},
     path::Path,
     process::{Command, Output, Stdio},
@@ -105,10 +106,18 @@ fn stream(
 ) -> Result<Option<Result<(), String>>, String> {
     let mut result = None;
     let mut emitted_text = false;
-    let mut partial = String::new();
-    let mut emit_text = |text: &str| {
+    let mut partials = HashMap::<usize, String>::new();
+    let mut message_index = 0;
+    let mut last_block = None;
+    let mut emit_text = |text: &str, block| {
         if !text.is_empty() {
-            emit(RunUpdate::Text { text: text.into() })?;
+            let text = if last_block.is_some() && last_block != Some(block) {
+                format!("\n{text}")
+            } else {
+                text.into()
+            };
+            emit(RunUpdate::Text { text })?;
+            last_block = Some(block);
             emitted_text = true;
         }
         Ok::<(), String>(())
@@ -125,25 +134,30 @@ fn stream(
             Some("stream_event") => {
                 let event = &message["event"];
                 if event["type"] == "message_start" {
-                    partial.clear();
+                    partials.clear();
+                    message_index += 1;
                 }
                 if event["type"] == "content_block_delta"
                     && event["delta"]["type"] == "text_delta"
                     && let Some(text) = event["delta"]["text"].as_str()
                 {
-                    emit_text(text)?;
-                    partial.push_str(text);
+                    let index = event["index"].as_u64().unwrap_or_default() as usize;
+                    emit_text(text, (message_index, index))?;
+                    partials.entry(index).or_default().push_str(text);
                 }
             }
             Some("assistant") => {
                 if let Some(blocks) = message["message"]["content"].as_array() {
-                    for block in blocks {
+                    for (index, block) in blocks.iter().enumerate() {
                         match block["type"].as_str() {
                             Some("text") => {
                                 if let Some(text) = block["text"].as_str() {
-                                    emit_text(text.strip_prefix(&partial).unwrap_or_default())?;
+                                    let partial = partials.get(&index).map_or("", String::as_str);
+                                    emit_text(
+                                        text.strip_prefix(partial).unwrap_or_default(),
+                                        (message_index, index),
+                                    )?;
                                 }
-                                partial.clear();
                             }
                             Some("tool_use") => {
                                 if let Some(name) = block["name"].as_str() {
@@ -154,6 +168,8 @@ fn stream(
                         }
                     }
                 }
+                partials.clear();
+                message_index += 1;
             }
             Some("result") => {
                 result = Some(message);
@@ -267,8 +283,28 @@ mod tests {
                 {"type": "text", "text": "Reading "},
                 {"type": "text", "text": "the file."},
                 {"type": "tool", "name": "Read"},
-                {"type": "text", "text": "The file is empty."}
+                {"type": "text", "text": "\nThe file is empty."}
             ])
+        );
+    }
+
+    #[test]
+    fn separate_blocks_keep_their_streamed_deltas_together() {
+        let updates = RefCell::new(String::new());
+        stream(concat!(
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\"}}\n",
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"First \"}}}\n",
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"block\"}}}\n",
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Second block\"}}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"First block\"},{\"type\":\"text\",\"text\":\"Second block\"}]}}\n",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Third block\"},{\"type\":\"text\",\"text\":\"Fourth block\"}]}}\n",
+        ).as_bytes(), &|update| {
+            if let RunUpdate::Text { text } = update { updates.borrow_mut().push_str(&text); }
+            Ok(())
+        }).unwrap();
+        assert_eq!(
+            *updates.borrow(),
+            "First block\nSecond block\nThird block\nFourth block"
         );
     }
 

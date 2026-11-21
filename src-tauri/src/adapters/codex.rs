@@ -82,6 +82,7 @@ fn stream(
 ) -> Result<Option<Result<(), String>>, String> {
     let mut result = None;
     let mut texts = HashMap::<String, String>::new();
+    let mut emitted_text = false;
     let mut tools = HashSet::new();
     for line in input.lines() {
         let line = line.map_err(|error| format!("无法读取 Codex 输出：{error}"))?;
@@ -100,7 +101,13 @@ fn stream(
                             let previous = texts.entry(id.into()).or_default();
                             let delta = text.strip_prefix(previous.as_str()).unwrap_or(text);
                             if !delta.is_empty() {
-                                emit(RunUpdate::Text { text: delta.into() })?;
+                                let text = if previous.is_empty() && emitted_text {
+                                    format!("\n{delta}")
+                                } else {
+                                    delta.into()
+                                };
+                                emit(RunUpdate::Text { text })?;
+                                emitted_text = true;
                             }
                             *previous = text.into();
                         }
@@ -214,7 +221,7 @@ mod tests {
                 {"type":"tool", "name":"file_change"},
                 {"type":"tool", "name":"docs::search"},
                 {"type":"tool", "name":"web_search"},
-                {"type":"text", "text":"Done."}
+                {"type":"text", "text":"\nDone."}
             ])
         );
         assert_eq!(
