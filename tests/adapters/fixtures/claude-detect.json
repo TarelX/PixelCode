@@ -1,0 +1,8 @@
+[
+  {"success": true, "stdout": "{\"loggedIn\":true,\"authMethod\":\"oauth_token\"}", "stderr": "", "status": "found", "error": false},
+  {"success": false, "stdout": "{\"loggedIn\":false,\"authMethod\":\"none\"}", "stderr": "", "status": "found_needs_login", "error": false},
+  {"success": false, "stdout": "", "stderr": "unknown command", "status": "found_needs_login", "error": true},
+  {"success": true, "stdout": "{}", "stderr": "", "status": "found_needs_login", "error": true},
+  {"success": false, "stdout": "{\"loggedIn\":true}", "stderr": "failed", "status": "found_needs_login", "error": true},
+  {"success": true, "stdout": "not json", "stderr": "", "status": "found_needs_login", "error": true}
+]
