@@ -7,12 +7,12 @@
     { "id": "hq", "x": 8, "y": 1, "w": 4, "h": 2, "color": "#c44b3a", "role": "captain" },
     { "id": "muster", "x": 8, "y": 4, "w": 4, "h": 1, "color": "#f5c51b" },
     { "id": "training", "x": 7, "y": 6, "w": 6, "h": 3, "color": "#c3a36b" },
-    { "id": "gate", "x": 18, "y": 8, "w": 2, "h": 2, "color": "#2b1b0e" },
+    { "id": "gate", "x": 17, "y": 8, "w": 2, "h": 2, "color": "#2b1b0e" },
     { "id": "review-hall", "x": 15, "y": 1, "w": 3, "h": 2, "color": "#f3e2c0", "role": "reviewer" },
     { "id": "garden", "x": 2, "y": 1, "w": 3, "h": 2, "color": "#3a6fbf", "role": "web-designer" },
     { "id": "architect-post", "x": 2, "y": 4, "w": 3, "h": 2, "color": "#f3e2c0", "role": "architect" },
     { "id": "frontend-post", "x": 2, "y": 8, "w": 3, "h": 2, "color": "#c44b3a", "role": "frontend" },
     { "id": "backend-post", "x": 15, "y": 4, "w": 3, "h": 2, "color": "#c44b3a", "role": "backend" },
-    { "id": "debugger-post", "x": 14, "y": 8, "w": 3, "h": 2, "color": "#f3e2c0", "role": "debugger" }
+    { "id": "debugger-post", "x": 13, "y": 8, "w": 3, "h": 2, "color": "#f3e2c0", "role": "debugger" }
   ]
 }
