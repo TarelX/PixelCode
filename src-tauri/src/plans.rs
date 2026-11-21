@@ -156,10 +156,18 @@ pub(crate) enum Reply {
 
 pub(crate) const INSTRUCTIONS: &str = r#"
 You are a read-only planner. Do not implement tasks, edit files, run checks, approve, or deliver.
-The JSON input carries the user's request, the camp's roster, and optional clarification.
-Use roster IDs only. Tailor the task count and dependencies to the request. For example, bug fixes
-may use reproduce → fix → review; new projects may use architecture → design → implementation → test.
-Check and delivery gates are run by the application, not by you.
+The JSON input carries the user's request, the camp's roster, reference_flows, and optional clarification.
+Decide what kind of work the request is and design the flow for it. reference_flows are examples of a
+minimal structure, not fixed pipelines: adopt, trim, combine, or ignore them. Coding and non-coding
+requests (organizing documents, notes, data or reports) are equally valid; pick the scenario label that
+fits (bug-fix, new-project, refactor, research, or a short custom label) and recruit only the roster
+roles the work needs, matching their role_type and task_types. Size the task count to the request:
+a small request may be one task. Use roster IDs only.
+The application runs a check after every task (non-empty output, plus check_command when given) and a
+read-only review of every non-reviewer task, then asks the user to confirm delivery. Do not add tasks
+that only run checks or deliver; a reviewer task is optional for a final review across tasks.
+Each task's final answer is saved as its first output artifact, so non-coding tasks should name a
+Markdown output (for example action-items.md) and may use check_command null.
 Return exactly one JSON object with no Markdown or commentary in your final answer.
 If essential details are missing, return {"questions":["A concise question in the user's language"]}.
 If clarification.answer is null, the user asked you to decide: make reasonable assumptions and return a draft.
@@ -170,8 +178,40 @@ Otherwise use this draft shape (check_command can be null if there is no applica
    "check_command":{"program":"npm","args":["test"]}}
 ]}
 Use short ASCII task IDs and relative artifact names. Dependencies are task IDs in this plan.
+Each input artifact must be the first output artifact of a task it depends on.
 Recruit every assigned role. Use single-executable check suggestions with argument arrays, never shell scripts.
 "#;
+
+const FLOWS: &[&str] = &[
+    include_str!("../../flows/bug-fix.yaml"),
+    include_str!("../../flows/new-project.yaml"),
+    include_str!("../../flows/refactor.yaml"),
+    include_str!("../../flows/research.yaml"),
+];
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Flow {
+    id: String,
+    name: String,
+    fits: String,
+    steps: Vec<FlowStep>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct FlowStep {
+    step: String,
+    role_type: String,
+    output: String,
+}
+
+fn reference_flows() -> Result<Vec<Flow>, String> {
+    FLOWS
+        .iter()
+        .map(|text| serde_yaml::from_str(text).map_err(|e| format!("无法读取内置流程模板：{e}")))
+        .collect()
+}
 
 pub(crate) fn input(
     request: &str,
@@ -191,6 +231,7 @@ pub(crate) fn input(
     Ok(serde_json::json!({
         "user_request": request.trim(),
         "roster": roster,
+        "reference_flows": reference_flows()?,
         "clarification": clarification,
     })
     .to_string())
@@ -311,6 +352,21 @@ impl Plan {
                 followers[*parent].push(index);
             }
             incoming.push(seen.len());
+            for name in &task.input_artifacts {
+                if !task.depends_on.iter().any(|id| {
+                    let parent = &self.tasks[indices[id.as_str()]];
+                    parent
+                        .output_artifacts
+                        .first()
+                        .map_or("output.md", String::as_str)
+                        == name
+                }) {
+                    return Err(format!(
+                        "锦囊 {} 的输入产物 {name} 不是其前置锦囊的首个输出产物",
+                        task.id
+                    ));
+                }
+            }
         }
         let mut ready: Vec<_> = incoming
             .iter()
@@ -440,6 +496,11 @@ mod tests {
             ("/tasks/1/title", json!(" "), "缺少标题"),
             ("/tasks/1/output_artifacts", json!(["../repo"]), "相对路径"),
             (
+                "/tasks/0/input_artifacts",
+                json!(["notes.md"]),
+                "首个输出产物",
+            ),
+            (
                 "/tasks/0/check_command",
                 json!("npm test"),
                 "有效的草案或澄清 JSON",
@@ -453,6 +514,33 @@ mod tests {
                 "{pointer}"
             );
         }
+    }
+
+    #[test]
+    fn non_coding_drafts_parse_and_reference_flows_reach_the_captain() {
+        let roster = roster();
+        let fixture = include_str!("../../tests/scheduler/captain-plan-docs.json");
+        let Reply::Draft(plan) = parse(fixture, &roster, None).unwrap() else {
+            panic!("expected a draft");
+        };
+        assert_eq!(plan.scenario, "research");
+        let flows = reference_flows().unwrap();
+        let ids: HashSet<_> = flows.iter().map(|flow| flow.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            HashSet::from(["bug-fix", "new-project", "refactor", "research"])
+        );
+        for step in flows.iter().flat_map(|flow| &flow.steps) {
+            assert!(crate::roles::ROLE_TYPES.contains(&step.role_type.as_str()));
+            assert!(!step.step.trim().is_empty() && !step.output.trim().is_empty());
+        }
+        let encoded: Value =
+            serde_json::from_str(&input("整理会议记录", &roster, None).unwrap()).unwrap();
+        assert_eq!(encoded["reference_flows"].as_array().unwrap().len(), 4);
+        assert_eq!(
+            encoded["reference_flows"][3]["steps"][2]["role_type"],
+            "captain"
+        );
     }
 
     #[test]

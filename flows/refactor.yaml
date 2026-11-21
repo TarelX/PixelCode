@@ -1,0 +1,8 @@
+id: refactor
+name: 重构
+fits: 改结构不改行为
+steps:
+  - { step: 补测试, role_type: debugger, output: tests.md }
+  - { step: 重构, role_type: backend, output: refactor.md }
+  - { step: 测试保持全绿, role_type: debugger, output: test-report.md }
+  - { step: 审查, role_type: reviewer, output: review.md }

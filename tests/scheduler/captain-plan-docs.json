@@ -1,0 +1,28 @@
+{
+  "scenario": "research",
+  "recruited_roles": ["captain", "reviewer"],
+  "tasks": [
+    {
+      "id": "actions",
+      "title": "整理会议行动项",
+      "description": "阅读 notes/meeting.md，把会议记录整理成行动项清单。",
+      "role_id": "captain",
+      "depends_on": [],
+      "input_artifacts": [],
+      "output_artifacts": ["action-items.md"],
+      "acceptance_criteria": "每条行动项写明负责人、截止时间和出处段落。",
+      "check_command": null
+    },
+    {
+      "id": "verify",
+      "title": "核对行动项",
+      "description": "对照会议记录核对行动项，指出遗漏或误记。",
+      "role_id": "reviewer",
+      "depends_on": ["actions"],
+      "input_artifacts": ["action-items.md"],
+      "output_artifacts": ["verify.md"],
+      "acceptance_criteria": "确认没有遗漏会议中的决定与待办。",
+      "check_command": null
+    }
+  ]
+}

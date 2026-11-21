@@ -38,7 +38,7 @@ const SKILLS: &[(&str, &str)] = &[
         include_str!("../../skills/test-writing/SKILL.md"),
     ),
 ];
-const ROLE_TYPES: &[&str] = &[
+pub(crate) const ROLE_TYPES: &[&str] = &[
     "captain",
     "architect",
     "designer",

@@ -80,8 +80,12 @@ export function TaskBoard({ campId }: { campId: string }) {
   const height = Math.max(176, ...nodes.map((node) => node.y + 144));
   const statuses: Record<string, string> = theme.wall.statuses;
   const planStatuses: Record<string, string> = theme.wall.planStatuses;
+  const scenarios: Record<string, string> = theme.wall.scenarios;
   return <section className="strategy-wall">
-    <header><span className="section-label">{plan.scenario}</span><strong>{planStatuses[plan.status] ?? plan.status}</strong><p>{plan.user_request}</p></header>
+    <header>
+      <span className="section-label">{scenarios[plan.scenario] ?? plan.scenario}</span><strong>{planStatuses[plan.status] ?? plan.status}</strong><p>{plan.user_request}</p>
+      <div className="wall-recruits"><span>{theme.wall.recruited}</span>{plan.plan.recruited_roles.map((id) => <span key={id}>{roleName(id)}</span>)}</div>
+    </header>
     {(actionError || plan.execution_message) && <p role="alert">{actionError || plan.execution_message}</p>}
     <div className="wall-scroll"><div className="wall-graph" style={{ width, height }}>
       <svg width={width} height={height} shapeRendering="crispEdges" aria-hidden="true">

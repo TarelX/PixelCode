@@ -193,6 +193,8 @@ fn parse_review(text: &str) -> Option<Review> {
 
 const REVIEW_VERDICT: &str = r#"不得修改文件。最后仅返回单行 JSON，例如 {"verdict":"approve","reason":"原因"}。verdict 必须为 approve 或 reject。"#;
 
+const EMPTY_OUTPUT: &str = "调度器检查：角色未产出任何内容";
+
 fn review_rejection(text: &str) -> Option<String> {
     match parse_review(text) {
         Some(review) if review.verdict == "approve" => None,
@@ -297,7 +299,9 @@ fn execute(
                     &output,
                 )?;
                 status(conn, runner, &mut event, "checking", None)?;
-                if let Some(command) = &task.check_command {
+                let failure = if output.trim().is_empty() {
+                    Some(EMPTY_OUTPUT.to_string())
+                } else if let Some(command) = &task.check_command {
                     let (passed, log) = runner.check(command)?;
                     if runner.stopped() {
                         return Ok(None);
@@ -314,15 +318,18 @@ fn execute(
                         )),
                         &log,
                     )?;
-                    if !passed {
-                        event.attempts += 1;
-                        feedback = format!("检查失败，请返工：\n{}", tail(&log));
-                        if event.attempts > 3 {
-                            status(conn, runner, &mut event, "blocked", Some(feedback))?;
-                            return Ok(None);
-                        }
-                        continue;
+                    (!passed).then_some(log)
+                } else {
+                    None
+                };
+                if let Some(log) = failure {
+                    event.attempts += 1;
+                    feedback = format!("检查失败，请返工：\n{}", tail(&log));
+                    if event.attempts > 3 {
+                        status(conn, runner, &mut event, "blocked", Some(feedback))?;
+                        return Ok(None);
                     }
+                    continue;
                 }
                 if is_reviewer {
                     if let Some(reason) = review_rejection(&output) {
@@ -533,6 +540,7 @@ mod tests {
         stop: bool,
         invalid_review: bool,
         stop_on_done: bool,
+        empty: u32,
     }
     impl Runner for Fake {
         fn run(&mut self, role: &str, prompt: &str) -> Result<String, String> {
@@ -555,6 +563,10 @@ mod tests {
                     "审查已完成。\n```json\n{}\n```",
                     serde_json::json!({"verdict": verdict, "reason": "审查说明"})
                 ));
+            }
+            if self.empty > 0 {
+                self.empty -= 1;
+                return Ok(" \n".into());
             }
             if role == "backend" {
                 assert!(prompt.contains("输入产物 repro.md：\n角色输出"));
@@ -759,6 +771,58 @@ mod tests {
         assert_eq!(
             plans::latest(&conn, "camp").unwrap().unwrap().status,
             "aborted"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn empty_outputs_fail_the_scheduler_check() {
+        for (empty, expected, attempts) in [(1, "done", 1), (4, "blocked", 4)] {
+            let mut fake = Fake {
+                empty,
+                ..Fake::default()
+            };
+            let conn = run(&mut fake);
+            assert_eq!(state(&conn, "reproduce"), (expected.into(), attempts, 0));
+            if expected == "blocked" {
+                assert!(
+                    fake.events
+                        .borrow()
+                        .last()
+                        .unwrap()
+                        .message
+                        .as_deref()
+                        .unwrap()
+                        .contains(EMPTY_OUTPUT)
+                );
+                assert_eq!(state(&conn, "fix").0, "pending");
+            }
+        }
+    }
+
+    #[test]
+    fn non_coding_plan_runs_to_delivery() {
+        let mut conn = roles::tests::connection();
+        conn.execute("INSERT INTO plans (id,camp_id,scenario,user_request,plan_json,status,created_at) VALUES ('plan','camp','research','notes',?1,'draft',1)", [include_str!("../../tests/scheduler/captain-plan-docs.json")]).unwrap();
+        let plan = prepare(&mut conn, "camp", "plan").unwrap();
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("target/scheduler-docs-test");
+        let mut fake = Fake::default();
+        execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+        finish(&conn, "plan", true).unwrap();
+        assert_eq!(fake.runs, ["captain", "reviewer", "reviewer"]);
+        assert_eq!(state(&conn, "actions").0, "done");
+        assert_eq!(state(&conn, "verify").0, "done");
+        assert!(
+            root.join("camp")
+                .join("plan-actions")
+                .join("action-items.md")
+                .is_file()
+        );
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "awaiting_delivery"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
