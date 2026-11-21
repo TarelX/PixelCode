@@ -82,6 +82,7 @@ fn stream(
 ) -> Result<Option<Result<(), String>>, String> {
     let mut result = None;
     let mut texts = HashMap::<String, String>::new();
+    let mut emitted_text = false;
     let mut tools = HashSet::new();
     for line in input.lines() {
         let line = line.map_err(|error| format!("无法读取 Codex 输出：{error}"))?;
@@ -100,7 +101,13 @@ fn stream(
                             let previous = texts.entry(id.into()).or_default();
                             let delta = text.strip_prefix(previous.as_str()).unwrap_or(text);
                             if !delta.is_empty() {
-                                emit(RunUpdate::Text { text: delta.into() })?;
+                                let text = if previous.is_empty() && emitted_text {
+                                    format!("\n{delta}")
+                                } else {
+                                    delta.into()
+                                };
+                                emit(RunUpdate::Text { text })?;
+                                emitted_text = true;
                             }
                             *previous = text.into();
                         }
@@ -139,6 +146,7 @@ fn stream(
 
 pub(crate) fn start(
     options: StartOptions<'_>,
+    control: &crate::supervisor::RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
 ) -> Result<(), String> {
     let mut child = command(&options).spawn().map_err(|error| {
@@ -151,6 +159,7 @@ pub(crate) fn start(
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
+    control.attach(child)?;
     thread::scope(|scope| {
         let writer = scope.spawn(move || stdin.write_all(options.prompt.as_bytes()));
         let diagnostics = scope.spawn(move || {
@@ -161,9 +170,9 @@ pub(crate) fn start(
         });
         let result = emit(RunUpdate::Started).and_then(|()| stream(BufReader::new(stdout), emit));
         if result.is_err() {
-            let _ = child.kill();
+            control.terminate();
         }
-        let status = child
+        let status = control
             .wait()
             .map_err(|error| format!("无法等待 Codex 退出：{error}"));
         let written = writer.join().unwrap();
@@ -212,7 +221,7 @@ mod tests {
                 {"type":"tool", "name":"file_change"},
                 {"type":"tool", "name":"docs::search"},
                 {"type":"tool", "name":"web_search"},
-                {"type":"text", "text":"Done."}
+                {"type":"text", "text":"\nDone."}
             ])
         );
         assert_eq!(

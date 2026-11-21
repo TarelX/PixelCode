@@ -1,3 +1,4 @@
+use std::process::Child;
 use std::sync::{
     Mutex, TryLockError,
     atomic::{AtomicU64, Ordering},
@@ -16,7 +17,104 @@ const ROLE_RUN_EVENT: &str = "role-run";
 static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Default)]
-pub(crate) struct RunSlot(Mutex<()>);
+pub(crate) struct RunSlot {
+    active: Mutex<()>,
+    pub child: Mutex<Option<Child>>,
+    stopped: std::sync::atomic::AtomicBool,
+}
+
+impl RunSlot {
+    pub fn attach(&self, mut process: Child) -> Result<(), String> {
+        let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
+        if self.stopped.load(Ordering::SeqCst) {
+            let _ = process.kill();
+        }
+        *child = Some(process);
+        Ok(())
+    }
+
+    pub fn wait(&self) -> Result<std::process::ExitStatus, String> {
+        loop {
+            {
+                let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
+                if let Some(status) = child
+                    .as_mut()
+                    .ok_or("角色进程不存在")?
+                    .try_wait()
+                    .map_err(|e| e.to_string())?
+                {
+                    child.take();
+                    return Ok(status);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    pub fn stop(&self) -> Result<(), String> {
+        let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
+        if self.active.try_lock().is_err() {
+            self.stopped.store(true, Ordering::SeqCst);
+        }
+        if let Some(child) = child.as_mut()
+            && child.try_wait().map_err(|e| e.to_string())?.is_none()
+        {
+            child.kill().map_err(|e| format!("无法停止角色：{e}"))?;
+            self.stopped.store(true, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    pub fn terminate(&self) {
+        if let Ok(mut child) = self.child.lock()
+            && let Some(child) = child.as_mut()
+        {
+            let _ = child.kill();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_stop_is_noop() {
+        let slot = RunSlot::default();
+        slot.stop().unwrap();
+        assert!(!slot.stopped.load(Ordering::SeqCst));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stop_kills_child_and_covers_stop_before_spawn() {
+        for early in [false, true] {
+            let slot = RunSlot::default();
+            let _active = slot.active.lock().unwrap();
+            if early {
+                slot.stop().unwrap();
+            }
+            slot.attach(
+                std::process::Command::new("sleep")
+                    .arg("30")
+                    .spawn()
+                    .unwrap(),
+            )
+            .unwrap();
+            if !early {
+                slot.stop().unwrap();
+            }
+            assert!(!slot.wait().unwrap().success());
+            assert!(slot.stopped.load(Ordering::SeqCst));
+            assert!(slot.child.lock().unwrap().is_none());
+        }
+    }
+}
+
+#[tauri::command]
+pub fn stop_role_run(state: tauri::State<'_, RunSlot>) -> Result<(), String> {
+    state.stop()
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -25,6 +123,7 @@ pub(crate) enum RunUpdate {
     Text { text: String },
     Tool { name: String },
     Completed,
+    Stopped,
     Failed { message: String },
 }
 
@@ -50,10 +149,11 @@ pub async fn start_role_run(
     }
     tauri::async_runtime::spawn_blocking(move || {
         let state = window.state::<RunSlot>();
-        let _active = state.0.try_lock().map_err(|error| match error {
+        let _active = state.active.try_lock().map_err(|error| match error {
             TryLockError::WouldBlock => "已有角色正在运行",
             TryLockError::Poisoned(_) => "无法访问角色运行状态",
         })?;
+        state.stopped.store(false, Ordering::SeqCst);
         let (cwd, cli, model, system_prompt, permissions) = {
             let state = window.state::<Mutex<Connection>>();
             let connection = state.lock().map_err(|_| "无法访问大营数据库")?;
@@ -85,10 +185,13 @@ pub async fn start_role_run(
             permissions: &permissions,
         };
         let result = match cli.as_str() {
-            "claude-code" => claude_code::start(options, &emit),
-            "codex" => codex::start(options, &emit),
+            "claude-code" => claude_code::start(options, &state, &emit),
+            "codex" => codex::start(options, &state, &emit),
             _ => Err(format!("不支持的 CLI：{cli}")),
         };
+        if state.stopped.load(Ordering::SeqCst) {
+            return emit(RunUpdate::Stopped);
+        }
         match result {
             Ok(()) => emit(RunUpdate::Completed),
             Err(message) => {
