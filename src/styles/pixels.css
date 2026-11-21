@@ -25,6 +25,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ui-accent); out
 .camp-heading h1 { margin: 2px 0; font-size: 23px; font-weight: 600; }
 .camp-heading p { margin: 0; font: 11px/1.8 ui-monospace, monospace; color: var(--ui-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .camp-ready { display: flex; align-items: center; gap: 8px; white-space: nowrap; color: var(--ui-success); font-size: 11px; }
+.camp-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 12px; max-width: 50%; }
+.battle-report-action p { margin: 6px 0 0; font-size: 11px; overflow-wrap: anywhere; white-space: normal; }
 .camp-map { flex: 1; min-height: 240px; display: flex; flex-direction: column; background: var(--ui-sidebar); border: 1px solid var(--ui-border); }
 .camp-map__bar { display: flex; justify-content: space-between; padding: 9px 14px; border-bottom: 1px solid var(--ui-border); font-size: 10px; color: var(--ui-muted); }
 .camp-map__bar > span:first-child { display: flex; align-items: center; gap: 8px; }

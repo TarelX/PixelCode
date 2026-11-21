@@ -1,4 +1,11 @@
 {
+  "report": {
+    "title": "今日战报", "export": "导出战报", "busy": "正在绘制…",
+    "saved": "战报已保存：", "error": "无法导出战报：", "canvasError": "无法创建战报画布", "pngError": "无法生成 PNG 图片",
+    "roles": "驻营名将 · 当前状态", "tasks": "最新锦囊 · 当前状态", "emptyRoles": "尚无驻营名将", "idle": "驻地待命",
+    "today": "今日进度", "scope": "统计本地今日创建或更新的锦囊；检查 / 审查计入执行中，受阻计入失败。",
+    "done": "已完成", "running": "执行中", "failed": "失败 / 受阻", "pending": "待执行"
+  },
   "wall": {
     "title": "锦囊墙", "close": "返回军营", "empty": "尚无锦囊计划。请先请队长拟定草案。",
     "loading": "正在读取锦囊…", "loadError": "无法打开锦囊墙：", "invalid": "锦囊依赖无效，无法绘制。",
