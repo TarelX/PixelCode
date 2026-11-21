@@ -13,7 +13,7 @@ export function CliStatus({ compact = false, onOpenSettings }: { compact?: boole
   if (compact) return <footer className="workspace-status" aria-label="CLI 状态" aria-busy={loading}>
     <span><PixelIcon name="terminal" /><span>{loading ? "正在探测编码工具…" : error ? "工具探测失败" : "编码工具"}</span></span>
     <button type="button" onClick={onOpenSettings} aria-label="查看编码工具状态与设置">
-      {results.map((result) => <span key={result.id}><i className={`status-dot status-dot--${result.error ? "error" : result.status}`} />{result.id === "claude-code" ? "Claude Code" : "Codex"}<span className="workspace-status__label">{result.error ? "需检查" : labels[result.status]}</span></span>)}
+      {results.map((result) => <span key={result.id}><i className={`status-dot status-dot--${result.error && result.status !== "not_found" ? "error" : result.status}`} />{result.id === "claude-code" ? "Claude Code" : "Codex"}<span className="workspace-status__label">{result.error && result.status !== "not_found" ? "需检查" : labels[result.status]}</span></span>)}
       <span className="workspace-status__settings">工具设置 <PixelIcon name="arrow" /></span>
     </button>
   </footer>;
@@ -26,7 +26,7 @@ export function CliStatus({ compact = false, onOpenSettings }: { compact?: boole
       <ul>
         {results.map((result) => (
           <li key={result.id} className="cli-tool">
-            <div className="cli-tool__heading"><span className="cli-tool__icon"><PixelIcon name="terminal" /></span><strong>{result.id === "claude-code" ? "Claude Code" : "Codex"}</strong><span className="cli-tool__state"><i className={`status-dot status-dot--${result.error ? "error" : result.status}`} />{result.error && result.status !== "not_found" ? "无法确认状态" : labels[result.status]}</span></div>
+            <div className="cli-tool__heading"><span className="cli-tool__icon"><PixelIcon name="terminal" /></span><strong>{result.id === "claude-code" ? "Claude Code" : "Codex"}</strong><span className="cli-tool__state"><i className={`status-dot status-dot--${result.error && result.status !== "not_found" ? "error" : result.status}`} />{result.error && result.status !== "not_found" ? "无法确认状态" : labels[result.status]}</span></div>
             {result.version && <code className="cli-tool__version">{result.version}</code>}
             {result.error && <p role="alert">{result.error}</p>}
             {!result.error && result.status === "found_needs_login" && (
