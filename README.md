@@ -68,9 +68,13 @@ JSONL 结构按官方 `codex-rs/exec/src/exec_events.rs`，配置键按官方
 <https://developers.openai.com/codex/noninteractive>。
 
 仅同时允许 Write、Edit 且未禁止任一工具时使用 `workspace-write`，否则 `read-only`。
-写沙箱禁止网络及临时目录写入。Codex 沙箱无法表达 Claude 的逐工具/命令规则，
-因此保守禁用 shell 工具（`features.shell_tool=false`），不执行 Bash、git 提交/合并或检查命令；
-依赖 shell 的读取、测试任务也可能无法完成。文件编辑仍由沙箱内的补丁工具执行。
+两种模式均保留 Codex 的 shell 工具，以便通过命令读取、搜索文件及运行检查。
+写沙箱关闭网络（阻止联网 git push），排除临时目录，写入限制在大营工作目录；
+只读角色即使通过 shell 读取、搜索文件也无法写入。Codex 不支持逐条翻译 Claude 的
+Bash deny 规则，改由沙箱约束网络与写入范围；这不等于禁止工作目录内的删除操作。
+`codex exec --help` 和配置 schema 没有独立的 `.git` 只读开关；官方
+`codex-rs/protocol/src/permissions.rs` 的默认工作区策略已保护 `.git` 为只读，
+因此不添加未确认的参数，也不放宽该默认保护。
 使用 `--ignore-user-config --ignore-rules --ephemeral --skip-git-repo-check`，避免用户/项目
 配置中的 MCP、hook 或规则扩大权限，不保存会话，支持非 git 大营。CLI 登录凭证仍由 CLI 使用，
 但自定义供应商配置不会加载；本适配器要求支持这些参数的版本，不做不安全降级。

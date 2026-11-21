@@ -57,8 +57,6 @@ fn command(options: &StartOptions<'_>) -> Command {
             "--ephemeral",
             "--skip-git-repo-check",
             "--config",
-            "features.shell_tool=false",
-            "--config",
             "sandbox_workspace_write.network_access=false",
             "--config",
             "sandbox_workspace_write.exclude_tmpdir_env_var=true",
@@ -292,7 +290,21 @@ mod tests {
                     .any(|pair| pair == ["--ask-for-approval", "never"])
             );
             assert!(args.contains(&"--model=a model"));
-            assert!(args.contains(&"features.shell_tool=false"));
+            assert!(
+                !args
+                    .iter()
+                    .any(|arg| arg.starts_with("features.shell_tool="))
+            );
+            for restriction in [
+                "sandbox_workspace_write.network_access=false",
+                "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+                "sandbox_workspace_write.exclude_slash_tmp=true",
+            ] {
+                assert!(
+                    args.windows(2)
+                        .any(|pair| pair == ["--config", restriction])
+                );
+            }
             assert!(args.contains(&"--ignore-user-config"));
             assert!(args.contains(&"--json"));
             assert_eq!(args.last(), Some(&"-"));
