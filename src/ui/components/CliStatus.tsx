@@ -1,4 +1,5 @@
 import { useCliDetection } from "../../app/cli-detection";
+import { PixelButton } from "./PixelButton";
 
 const labels = {
   not_found: "未找到",
@@ -9,7 +10,7 @@ const labels = {
 export function CliStatus() {
   const { results, loading, error, refresh } = useCliDetection();
   return (
-    <section aria-label="CLI 状态" aria-busy={loading}>
+    <section className="cli-status" aria-label="CLI 状态" aria-busy={loading}>
       <h2>CLI 状态</h2>
       {loading && <p role="status">正在探测 CLI…</p>}
       {error && <p role="alert">{error}</p>}
@@ -33,7 +34,7 @@ export function CliStatus() {
           <a href="https://developers.openai.com/codex/cli" target="_blank" rel="noreferrer">Codex 安装文档</a>
         </p>
       )}
-      <button disabled={loading} onClick={() => void refresh()}>重新探测 CLI</button>
+      <PixelButton disabled={loading} onClick={() => void refresh()}>重新探测 CLI</PixelButton>
     </section>
   );
 }

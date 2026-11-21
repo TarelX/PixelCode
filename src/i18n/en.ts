@@ -7,4 +7,6 @@ export const en = {
   openError: "Unable to open camp: ",
   recentError: "Unable to load recent camps: ",
   campTitle: "Camp",
+  settings: "Settings",
+  closeSettings: "Close settings",
 };

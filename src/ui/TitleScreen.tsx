@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore, type Camp } from "../app/store";
 import { zh } from "../i18n/zh";
+import { PixelButton } from "./components/PixelButton";
 
 export function TitleScreen() {
   const openCamp = useAppStore((s) => s.openCamp);
@@ -39,15 +40,17 @@ export function TitleScreen() {
   return (
     <main className="screen title-screen">
       <h1>{zh.appName}</h1>
-      <button disabled={busy} onClick={() => void enterCamp()}>{zh.titleRecruit}</button>
+      <PixelButton variant="primary" disabled={busy} onClick={() => void enterCamp()}>
+        {zh.titleRecruit}
+      </PixelButton>
       <h2>{zh.recentCamps}</h2>
       {recent.length === 0 && <p>{zh.noRecentCamps}</p>}
-      <ul>
+      <ul className="title-screen__recent">
         {recent.map((camp) => (
           <li key={camp.id}>
-            <button disabled={busy} onClick={() => void enterCamp(camp.root_path)}>
+            <PixelButton disabled={busy} onClick={() => void enterCamp(camp.root_path)}>
               {camp.root_path}
-            </button>
+            </PixelButton>
           </li>
         ))}
       </ul>
