@@ -80,15 +80,20 @@ export function RoleCard({ role, onDone }: { role: RoleConfig | null; onDone: ()
       permissions: { allow: lines(allow), deny: lines(deny) },
       task_types: taskTypes.split(/[,，]/).map((type) => type.trim()).filter(Boolean),
     };
-    if (isNew && roles.some((existing) => existing.id === next.id)) {
-      setError(zh.roleIdTaken + next.id);
+    const invalid = isNew && !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(next.id) ? zh.roleIdInvalid
+      : isNew && roles.some((existing) => existing.id === next.id) ? zh.roleIdTaken + next.id
+      : !next.name ? zh.roleNameRequired
+      : !next.personality ? zh.rolePersonalityRequired
+      : null;
+    if (invalid) {
+      setError(invalid);
       return;
     }
     void run(() => save(next, campId), zh.roleSaveError);
   }
 
   return (
-    <form className="role-card" onSubmit={submit} aria-busy={busy}>
+    <form className="role-card" noValidate onSubmit={submit} aria-busy={busy}>
       <header className="role-card__hero">
         <span className="role-card__portrait"><RoleAvatar avatar={draft.avatar} scale={4} /></span>
         <div className="role-card__identity">
@@ -106,15 +111,17 @@ export function RoleCard({ role, onDone }: { role: RoleConfig | null; onDone: ()
 
       <fieldset className="role-card__section role-card__grid">
         <legend className="section-label">PROFILE</legend>
-        {isNew && <label className="role-field role-field--wide"><span>{zh.roleId}</span><input required value={draft.id} onChange={(e) => update({ id: e.target.value })} pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-describedby={`${id}-id`} /><small id={`${id}-id`}>{zh.roleIdHint}</small></label>}
-        <label className="role-field"><span>{zh.roleName}</span><input required value={draft.name} onChange={(e) => update({ name: e.target.value })} /></label>
+        {isNew && <label className="role-field role-field--wide"><span>{zh.roleId}</span><input value={draft.id} onChange={(e) => update({ id: e.target.value })} aria-describedby={`${id}-id`} /><small id={`${id}-id`}>{zh.roleIdHint}</small></label>}
+        <label className="role-field"><span>{zh.roleName}</span><input value={draft.name} onChange={(e) => update({ name: e.target.value })} /></label>
         <label className="role-field"><span>{zh.roleNameEn}</span><input value={draft.name_en ?? ""} onChange={(e) => update({ name_en: e.target.value })} /></label>
         <label className="role-field"><span>{zh.roleTitle}</span><input value={draft.title ?? ""} onChange={(e) => update({ title: e.target.value })} /></label>
-        <label className="role-field"><span>{zh.roleType}</span>
-          <select value={draft.role_type} onChange={(e) => update({ role_type: e.target.value as RoleType })}>
-            {Object.entries(zh.roleTypes).map(([type, label]) => <option key={type} value={type}>{label}</option>)}
-          </select>
-        </label>
+        <div className="role-field role-field--wide"><span id={`${id}-type`}>{zh.roleType}</span>
+          <div className="role-choice" role="radiogroup" aria-labelledby={`${id}-type`}>
+            {(Object.entries(zh.roleTypes) as [RoleType, string][]).map(([type, label]) => (
+              <button key={type} type="button" role="radio" aria-checked={draft.role_type === type} onClick={() => update({ role_type: type })}>{label}</button>
+            ))}
+          </div>
+        </div>
         <div className="role-field role-field--wide"><span id={`${id}-avatar`}>{zh.roleAvatar}</span>
           <div className="role-card__avatars" role="radiogroup" aria-labelledby={`${id}-avatar`}>
             {avatarFiles.map((file) => (
@@ -128,7 +135,7 @@ export function RoleCard({ role, onDone }: { role: RoleConfig | null; onDone: ()
 
       <fieldset className="role-card__section">
         <legend className="section-label">PERSONA</legend>
-        <label className="role-field"><span>{zh.rolePersonality}</span><textarea required rows={4} value={draft.personality} onChange={(e) => update({ personality: e.target.value })} aria-describedby={`${id}-persona`} /><small id={`${id}-persona`}>{zh.rolePersonalityHint}</small></label>
+        <label className="role-field"><span>{zh.rolePersonality}</span><textarea rows={4} value={draft.personality} onChange={(e) => update({ personality: e.target.value })} aria-describedby={`${id}-persona`} /><small id={`${id}-persona`}>{zh.rolePersonalityHint}</small></label>
       </fieldset>
 
       <fieldset className="role-card__section">
@@ -151,9 +158,9 @@ export function RoleCard({ role, onDone }: { role: RoleConfig | null; onDone: ()
           {draft.loadouts.map((loadout, index) => (
             <li key={index}>
               <span className="role-card__slot">{String(index + 1).padStart(2, "0")}</span>
-              <select aria-label={zh.loadoutCli} value={loadout.cli} onChange={(e) => updateLoadout(index, { cli: e.target.value as CliId })}>
-                {clis.map((cli) => <option key={cli.id} value={cli.id}>{cli.label}</option>)}
-              </select>
+              <div className="role-choice" role="radiogroup" aria-label={zh.loadoutCli}>
+                {clis.map((cli) => <button key={cli.id} type="button" role="radio" aria-checked={loadout.cli === cli.id} onClick={() => updateLoadout(index, { cli: cli.id })}>{cli.label}</button>)}
+              </div>
               <input aria-label={zh.loadoutModel} placeholder="auto" value={loadout.model} onChange={(e) => updateLoadout(index, { model: e.target.value })} />
               <PixelButton disabled={draft.loadouts.length === 1} onClick={() => update({ loadouts: draft.loadouts.filter((_, i) => i !== index) })}>{zh.removeLoadout}</PixelButton>
             </li>
@@ -169,8 +176,8 @@ export function RoleCard({ role, onDone }: { role: RoleConfig | null; onDone: ()
         <label className="role-field role-field--wide"><span>{zh.roleTaskTypes}</span><input value={taskTypes} onChange={(e) => setTaskTypes(e.target.value)} /></label>
       </fieldset>
 
-      {error && <p role="alert">{error}</p>}
       <footer className="role-card__actions">
+        {error && <p className="role-card__error" role="alert">{error}</p>}
         {draft.source === "modified_preset" && <PixelButton disabled={busy} onClick={() => void run(() => remove(draft.id, campId), zh.roleDeleteError)}>{zh.restorePreset}</PixelButton>}
         {!isNew && draft.source === "custom" && <PixelButton className="role-card__danger" disabled={busy} onClick={() => confirming ? void run(() => remove(draft.id, campId), zh.roleDeleteError) : setConfirming(true)}>{confirming ? zh.confirmDelete : zh.deleteRole}</PixelButton>}
         <span />

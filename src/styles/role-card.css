@@ -42,13 +42,15 @@
 .role-field > span, .role-field__label { color: var(--text-light); font-size: 11px; }
 .role-field__label { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .role-field small, .role-field__label small { color: var(--ui-muted); font-size: 10px; }
-.role-card input:not([type="checkbox"]), .role-card select, .role-card textarea { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--ui-border); border-radius: 0; background: var(--ui-sidebar); color: var(--text-light); font-size: 12px; }
-.role-card select { appearance: none; padding-right: 26px; background: var(--ui-sidebar) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' shape-rendering='crispEdges'%3E%3Cpath fill='%23ecebe2' d='M0 0h8v1H0zM1 1h6v1H1zM2 2h4v1H2zM3 3h2v1H3z'/%3E%3C/svg%3E") no-repeat right 10px center; }
-.role-card option { background: var(--ui-sidebar); color: var(--text-light); }
+.role-card input:not([type="checkbox"]), .role-card textarea { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--ui-border); border-radius: 0; background: var(--ui-sidebar); color: var(--text-light); font-size: 12px; }
+.role-choice { display: flex; flex-wrap: wrap; gap: 4px; }
+.role-choice > button { padding: 6px 10px; border: 1px solid var(--ui-border); background: var(--ui-sidebar); color: var(--ui-muted); font-size: 11px; cursor: pointer; }
+.role-choice > button:hover { color: var(--text-light); border-color: var(--ui-muted); }
+.role-choice > button[aria-checked="true"] { color: var(--text-light); border-color: var(--ui-accent); box-shadow: inset 0 0 0 1px var(--ui-accent); }
+.role-choice > button:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
 .role-card textarea { resize: vertical; line-height: 1.6; }
 .role-card textarea[spellcheck="false"] { font: 11px/1.6 ui-monospace, monospace; }
-.role-card input:focus, .role-card select:focus, .role-card textarea:focus { outline: 1px solid var(--ui-accent); border-color: var(--ui-accent); }
-.role-card input:invalid:not(:placeholder-shown):not(:focus) { border-color: var(--ui-error); }
+.role-card input:focus, .role-card textarea:focus { outline: 1px solid var(--ui-accent); border-color: var(--ui-accent); }
 .role-card__avatars { display: flex; flex-wrap: wrap; gap: 6px; }
 .role-card__avatar-option { display: grid; place-items: center; width: 44px; height: 58px; padding: 0; border: 1px solid var(--ui-border); background: var(--ui-bg); cursor: pointer; }
 .role-card__avatar-option:hover { border-color: var(--ui-muted); }
@@ -60,12 +62,12 @@
 .role-check code { display: block; font-size: 11px; }
 .role-check small { display: block; color: var(--ui-muted); font-size: 10px; }
 .role-card__loadouts { display: grid; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
-.role-card__loadouts li { display: grid; grid-template-columns: 28px 150px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.role-card__loadouts li { display: grid; grid-template-columns: 28px auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
 .role-card__loadouts .pixel-button { padding: 6px 10px; font-size: 10px; }
 .role-card__slot { color: var(--ui-muted); font: 10px ui-monospace, monospace; }
 .role-card__add { font-size: 11px; padding: 6px 12px; }
-.role-card > [role="alert"] { margin: 14px 24px 0; font-size: 12px; }
-.role-card__actions { position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 14px 24px; background: var(--ui-bg); }
+.role-card__actions { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 24px; background: var(--ui-bg); border-top: 1px solid var(--ui-border); }
+.role-card__error { flex-basis: 100%; margin: 0 0 4px; color: var(--ui-error); font-size: 12px; }
 .role-card__actions > span { flex: 1; }
 .role-card__danger { color: var(--ui-error); }
 
