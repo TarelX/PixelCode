@@ -17,6 +17,7 @@ export interface StoredPlan {
   scenario: string;
   user_request: string;
   created_at: number;
+  execution_message: string | null;
   plan: { scenario: string; recruited_roles: string[]; tasks: PlanTask[] };
 }
 
