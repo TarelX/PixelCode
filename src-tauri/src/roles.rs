@@ -220,12 +220,12 @@ fn effective_roles(
     Ok(roles)
 }
 
-pub(crate) fn claude_config(
+pub(crate) fn run_config(
     connection: &Connection,
     camp_id: &str,
     role_id: &str,
     loadout_index: usize,
-) -> Result<(String, String, Permissions), String> {
+) -> Result<(String, String, String, Permissions), String> {
     let role = effective_roles(connection, Some(camp_id))?
         .into_iter()
         .find(|role| role.id == role_id)
@@ -233,8 +233,7 @@ pub(crate) fn claude_config(
     let loadout = role
         .loadouts
         .get(loadout_index)
-        .filter(|loadout| loadout.cli == "claude-code")
-        .ok_or("请选择角色的 Claude Code 武器槽")?;
+        .ok_or("未找到角色的武器槽")?;
     let mut system_prompt = role.personality;
     for id in role.skills {
         let (_, text) = SKILLS
@@ -244,7 +243,12 @@ pub(crate) fn claude_config(
         system_prompt.push_str("\n\n");
         system_prompt.push_str(text);
     }
-    Ok((loadout.model.clone(), system_prompt, role.permissions))
+    Ok((
+        loadout.cli.clone(),
+        loadout.model.clone(),
+        system_prompt,
+        role.permissions,
+    ))
 }
 
 fn upsert(connection: &Connection, role: &RoleConfig, camp_id: Option<&str>) -> Result<(), String> {
@@ -354,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_config_uses_camp_override_and_selected_loadout() {
+    fn run_config_uses_camp_override_and_selected_loadout() {
         let connection = connection();
         let mut role = presets().unwrap().remove(0);
         role.personality = "Camp persona".into();
@@ -362,8 +366,9 @@ mod tests {
         role.loadouts[0].model = "haiku".into();
         role.permissions.allow = vec!["Read".into()];
         upsert(&connection, &role, Some("camp")).unwrap();
-        let (model, system_prompt, permissions) =
-            claude_config(&connection, "camp", &role.id, 0).unwrap();
+        let (cli, model, system_prompt, permissions) =
+            run_config(&connection, "camp", &role.id, 0).unwrap();
+        assert_eq!(cli, "claude-code");
         assert_eq!(model, "haiku");
         assert_eq!(
             system_prompt,
@@ -374,12 +379,16 @@ mod tests {
         );
         assert_eq!(permissions.allow, ["Read"]);
         assert_eq!(
-            claude_config(&connection, "another-camp", &role.id, 0)
+            run_config(&connection, "another-camp", &role.id, 0)
                 .unwrap()
-                .0,
+                .1,
             "sonnet"
         );
-        assert!(claude_config(&connection, "camp", &role.id, 1).is_err());
+        assert_eq!(
+            run_config(&connection, "camp", &role.id, 1).unwrap().0,
+            "codex"
+        );
+        assert!(run_config(&connection, "camp", &role.id, 99).is_err());
     }
 
     #[test]

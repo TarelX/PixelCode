@@ -1,0 +1,15 @@
+{"type":"thread.started","thread_id":"thread-fixture"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"r1","type":"reasoning","text":"Inspect the project."}}
+{"type":"item.started","item":{"id":"m1","type":"agent_message","text":"Reading "}}
+{"type":"item.updated","item":{"id":"m1","type":"agent_message","text":"Reading the file."}}
+{"type":"item.completed","item":{"id":"m1","type":"agent_message","text":"Reading the file."}}
+{"type":"item.started","item":{"id":"c1","type":"command_execution","command":"pwd","aggregated_output":"","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"c1","type":"command_execution","command":"pwd","aggregated_output":"project","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"f1","type":"file_change","changes":[{"path":"hello.txt","kind":"add"}],"status":"completed"}}
+{"type":"item.started","item":{"id":"t1","type":"mcp_tool_call","server":"docs","tool":"search","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"t1","type":"mcp_tool_call","server":"docs","tool":"search","status":"completed"}}
+{"type":"item.completed","item":{"id":"w1","type":"web_search","query":"documentation"}}
+{"type":"future.event"}
+{"type":"item.completed","item":{"id":"m2","type":"agent_message","text":"Done."}}
+{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}

@@ -57,6 +57,25 @@ Rust 命令 `start_role_run(campId, roleId, loadoutIndex, prompt)` 使用已保�
 不加载大营的项目设置或 MCP 配置。仅在信任的大营运行：工具规则不等同于文件系统沙箱，
 允许编辑的角色会直接修改大营目录，工作树、任务 UI 和停止操作尚未接入。
 
+## Codex 单角色运行（阶段 B · 任务 4）
+
+`start_role_run` 也支持选中的 Codex 武器槽，沿用上述 `role-run` 事件与单角色运行限制。
+以本机 Codex CLI 0.171.0 的 `codex exec --help` / `codex --help` 核实参数：
+`codex --ask-for-approval never exec --json --sandbox read-only -`；任务经 stdin 发送，
+模型非 `auto` 时传 `--model`，人设和技能通过 `--config developer_instructions=...` 发送。
+JSONL 结构按官方 `codex-rs/exec/src/exec_events.rs`，配置键按官方
+`codex-rs/core/config.schema.json`；`docs/exec.md` 现链接至
+<https://developers.openai.com/codex/noninteractive>。
+
+仅同时允许 Write、Edit 且未禁止任一工具时使用 `workspace-write`，否则 `read-only`。
+写沙箱禁止网络及临时目录写入。Codex 沙箱无法表达 Claude 的逐工具/命令规则，
+因此保守禁用 shell 工具（`features.shell_tool=false`），不执行 Bash、git 提交/合并或检查命令；
+依赖 shell 的读取、测试任务也可能无法完成。文件编辑仍由沙箱内的补丁工具执行。
+使用 `--ignore-user-config --ignore-rules --ephemeral --skip-git-repo-check`，避免用户/项目
+配置中的 MCP、hook 或规则扩大权限，不保存会话，支持非 git 大营。CLI 登录凭证仍由 CLI 使用，
+但自定义供应商配置不会加载；本适配器要求支持这些参数的版本，不做不安全降级。
+仅在信任的大营运行；本阶段尚无交互审批、停止操作、真实登录运行或跨平台沙箱验证。
+
 ## 名将占位精灵（阶段 A · 任务 5）
 
 `assets/sprites/` 下 7 名将精灵均为本仓库原创像素画（随仓库 MIT 授权），由
