@@ -60,7 +60,7 @@ export const useRoster = create<RosterState>((set, get) => ({
   },
   select: (selectedId) => set({ selectedId }),
   save: async (role, campId) => {
-    await invoke("save_role", { role, campId: null });
+    await invoke("save_role", { role });
     const current = ++request;
     const roles = await invoke<RoleConfig[]>("list_roles", { campId });
     if (current === request) set({ roles, selectedId: role.id });

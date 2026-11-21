@@ -23,7 +23,7 @@
 
 .pixel-dialog:has(.role-card) { width: 720px; }
 .pixel-dialog__body:has(.role-card) { padding: 0; }
-.role-card { display: grid; }
+.role-card { display: grid; color-scheme: dark; }
 .role-card__hero { display: flex; gap: 20px; padding: 20px 24px; background: var(--ui-surface); border-bottom: 1px solid var(--ui-border); }
 .role-card__portrait { display: grid; place-items: center; width: 96px; height: 120px; flex-shrink: 0; border: 1px solid var(--ui-border); background: var(--ui-bg); box-shadow: 3px 3px 0 #0c100e; }
 .role-card__identity { min-width: 0; }
@@ -34,6 +34,7 @@
 .role-card__intro { margin-top: 10px !important; font-size: 11px !important; }
 .role-card__section { margin: 0; padding: 18px 24px; border: 0; border-bottom: 1px solid var(--ui-border); min-width: 0; }
 .role-card__section > legend { float: left; width: 100%; padding: 0; margin-bottom: 12px; color: var(--ui-accent); }
+.role-card__section:not(.role-card__grid) > :not(legend) { clear: both; }
 .role-card__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 .role-card__grid > legend { grid-column: 1 / -1; margin-bottom: 0; }
 .role-field { display: grid; gap: 5px; min-width: 0; }
@@ -42,6 +43,8 @@
 .role-field__label { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .role-field small, .role-field__label small { color: var(--ui-muted); font-size: 10px; }
 .role-card input:not([type="checkbox"]), .role-card select, .role-card textarea { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--ui-border); border-radius: 0; background: var(--ui-sidebar); color: var(--text-light); font-size: 12px; }
+.role-card select { appearance: none; padding-right: 26px; background: var(--ui-sidebar) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' shape-rendering='crispEdges'%3E%3Cpath fill='%23ecebe2' d='M0 0h8v1H0zM1 1h6v1H1zM2 2h4v1H2zM3 3h2v1H3z'/%3E%3C/svg%3E") no-repeat right 10px center; }
+.role-card option { background: var(--ui-sidebar); color: var(--text-light); }
 .role-card textarea { resize: vertical; line-height: 1.6; }
 .role-card textarea[spellcheck="false"] { font: 11px/1.6 ui-monospace, monospace; }
 .role-card input:focus, .role-card select:focus, .role-card textarea:focus { outline: 1px solid var(--ui-accent); border-color: var(--ui-accent); }
