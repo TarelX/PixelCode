@@ -7,12 +7,12 @@ import { layoutPlan, type StoredPlan } from "./plan-layout";
 import { PixelDialog } from "./PixelDialog";
 import { TaskDetail } from "./TaskDetail";
 import { PixelButton } from "./components/PixelButton";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n, roleName } from "../i18n";
 import "../styles/task-board.css";
 
-const gate = theme.wall.gate;
-
 export function TaskBoard({ campId }: { campId: string }) {
+  const { locale, theme } = useI18n();
+  const gate = theme.wall.gate;
   const [plan, setPlan] = useState<StoredPlan | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -29,7 +29,7 @@ export function TaskBoard({ campId }: { campId: string }) {
       const value = await invoke<StoredPlan | null>("latest_plan", { campId });
       if (id === request.current) { setPlan(value); setError(""); }
     } catch (reason) {
-      if (id === request.current) setError(`${theme.wall.loadError}${String(reason)}`);
+      if (id === request.current) setError(String(reason));
     } finally {
       if (id === request.current) setLoading(false);
     }
@@ -54,9 +54,12 @@ export function TaskBoard({ campId }: { campId: string }) {
   }, [campId, refresh]);
   useEffect(() => { void refresh(); }, [refresh, revision]);
 
-  const roleName = (id: string) => roles.find((role) => role.id === id)?.name ?? id;
+  const nameForRole = (id: string) => {
+    const role = roles.find((item) => item.id === id);
+    return role ? roleName(role, locale) : id;
+  };
   if (loading) return <p role="status">{theme.wall.loading}</p>;
-  if (error) return <p role="alert">{error}</p>;
+  if (error) return <p role="alert">{theme.wall.loadError}{error}</p>;
   if (!plan) return <p className="wall-empty">{theme.wall.empty}</p>;
   const draft = plan.status === "draft";
   const delivery = plan.status === "awaiting_delivery";
@@ -84,7 +87,7 @@ export function TaskBoard({ campId }: { campId: string }) {
   return <section className="strategy-wall">
     <header>
       <span className="section-label">{scenarios[plan.scenario] ?? plan.scenario}</span><strong>{planStatuses[plan.status] ?? plan.status}</strong><p>{plan.user_request}</p>
-      <div className="wall-recruits"><span>{theme.wall.recruited}</span>{plan.plan.recruited_roles.map((id) => <span key={id}>{roleName(id)}</span>)}</div>
+      <div className="wall-recruits"><span>{theme.wall.recruited}</span>{plan.plan.recruited_roles.map((id) => <span key={id}>{nameForRole(id)}</span>)}</div>
     </header>
     {(actionError || plan.execution_message) && <p role="alert">{actionError || plan.execution_message}</p>}
     <div className="wall-scroll"><div className="wall-graph" style={{ width, height }}>
@@ -96,7 +99,7 @@ export function TaskBoard({ campId }: { campId: string }) {
         }))}
       </svg>
       {nodes.map(({ task, x, y }) => <button className="strategy-card" key={task.id} style={{ left: x, top: y }} onClick={() => setSelected({ planId: plan.id, taskId: task.id })}>
-        <strong>{task.title}</strong><span>{roleName(task.role_id)}</span>
+        <strong>{task.title}</strong><span>{nameForRole(task.role_id)}</span>
         <small className={`task-status task-status--${Object.prototype.hasOwnProperty.call(statuses, task.status ?? "pending") ? task.status ?? "pending" : "pending"}`}>{statuses[task.status ?? "pending"] ?? task.status}</small>
       </button>)}
     </div></div>
@@ -104,7 +107,7 @@ export function TaskBoard({ campId }: { campId: string }) {
       <h3>{draft ? gate.approvalTitle : gate.deliveryTitle}</h3>
       <p>{draft ? gate.approvalHint : gate.deliveryHint}</p>
       {draft && checkedTasks.length > 0 && <ul>{checkedTasks.map(({ id, title, check_command: check }) =>
-        <li key={id}>{title}：<code>{JSON.stringify([check!.program, ...check!.args])}</code></li>
+        <li key={id}>{title}: <code>{JSON.stringify([check!.program, ...check!.args])}</code></li>
       )}</ul>}
       <div className="wall-gate__actions">
         <PixelButton variant="primary" disabled={busy} onClick={() => void (draft
@@ -119,7 +122,7 @@ export function TaskBoard({ campId }: { campId: string }) {
       {detail && <TaskDetail
         key={`${plan.id}-${detail.id}`}
         task={detail}
-        role={roleName(detail.role_id)}
+        role={nameForRole(detail.role_id)}
         tasks={tasks}
         resultId={!draft && detail.status === "done" ? `${plan.id}-${detail.id}` : undefined}
         assignment={draft && <fieldset className="wall-assignment">
@@ -129,7 +132,7 @@ export function TaskBoard({ campId }: { campId: string }) {
             disabled={busy}
             aria-pressed={detail.role_id === role.id}
             onClick={() => setEdits({ planId: plan.id, assignments: { ...assignments, [detail.id]: role.id } })}
-          >{role.name}</PixelButton>)}
+          >{roleName(role, locale)}</PixelButton>)}
         </fieldset>}
       />}
     </PixelDialog>

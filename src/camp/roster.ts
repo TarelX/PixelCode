@@ -50,7 +50,7 @@ export const useRoster = create<RosterState>((set, get) => ({
       if (current === request) set({ roles });
       return roles;
     } catch (reason) {
-      if (current === request) set({ error: `无法加载角色：${String(reason)}` });
+      if (current === request) set({ error: String(reason) });
       throw reason;
     }
   },

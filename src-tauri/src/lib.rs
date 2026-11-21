@@ -7,6 +7,7 @@ mod git;
 mod plans;
 mod roles;
 mod scheduler;
+mod settings;
 mod supervisor;
 mod themes;
 
@@ -29,6 +30,8 @@ pub fn run() {
             roles::delete_role,
             supervisor::start_role_run,
             scheduler::approve_plan_execution,
+            settings::get_locale,
+            settings::set_locale,
             artifacts::read_artifact,
             artifacts::list_artifacts,
             plans::latest_plan,

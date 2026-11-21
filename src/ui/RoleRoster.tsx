@@ -1,11 +1,11 @@
 import { useRoster, type RoleConfig } from "../camp/roster";
-import { zh } from "../i18n/zh";
 import { PixelButton } from "./components/PixelButton";
 import { PixelIcon } from "./components/PixelIcon";
 import { RoleAvatar } from "./components/RoleAvatar";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n, roleName, roleTitle } from "../i18n";
 
 export function RoleRoster({ onOpen }: { onOpen: (role: RoleConfig | null) => void }) {
+  const { locale, theme } = useI18n();
   const roles = useRoster((s) => s.roles);
   const selectedId = useRoster((s) => s.selectedId);
   return (
@@ -15,14 +15,14 @@ export function RoleRoster({ onOpen }: { onOpen: (role: RoleConfig | null) => vo
         <span>{roles.length}</span>
       </div>
       <p className="role-roster__hint">{theme.rosterHint}</p>
-      {roles.length === 0 && <p className="role-roster__hint" role="status">{zh.rolesLoading}</p>}
+      {roles.length === 0 && <p className="role-roster__hint" role="status">{theme.rolesLoading}</p>}
       <ul>
         {roles.map((role) => (
           <li key={role.id}>
             <button type="button" className={`role-roster__item ${role.id === selectedId ? "is-selected" : ""}`} aria-pressed={role.id === selectedId} onClick={() => onOpen(role)}>
               <RoleAvatar avatar={role.avatar} />
-              <span className="role-roster__name"><strong>{role.name}</strong><small>{role.title || zh.roleTypes[role.role_type]}</small></span>
-              {role.source !== "preset" && <em className={`role-tag role-tag--${role.source}`}>{zh.roleSources[role.source]}</em>}
+              <span className="role-roster__name"><strong>{roleName(role, locale)}</strong><small>{roleTitle(role, locale)}</small></span>
+              {role.source !== "preset" && <em className={`role-tag role-tag--${role.source}`}>{theme.roleSources[role.source]}</em>}
             </button>
           </li>
         ))}
