@@ -34,8 +34,17 @@ export async function renderBattleReport(data: {
     const lines: string[] = [];
     let line = "";
     for (const char of text) {
-      if (char === "\n" || ctx.measureText(line + char).width > maxWidth) {
-        lines.push(line); line = char === "\n" ? "" : char;
+      if (char === "\n") {
+        lines.push(line); line = "";
+      } else if (ctx.measureText(line + char).width > maxWidth) {
+        const space = locale === "en" && char !== " " ? line.lastIndexOf(" ") : -1;
+        if (space > 0) {
+          lines.push(line.slice(0, space).trimEnd());
+          line = line.slice(space + 1) + char;
+        } else {
+          lines.push(line);
+          line = char === " " && locale === "en" ? "" : char;
+        }
       } else line += char;
     }
     lines.push(line);

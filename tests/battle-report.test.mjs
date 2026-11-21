@@ -70,6 +70,10 @@ test("renders populated and empty reports, propagates canvas and encoding failur
   assert.ok(text.includes(english.report.title));
   assert.ok(text.some((line) => line.includes("General") && line.includes(english.runStates.running)));
   assert.ok(text.some((line) => line.includes("Implement") && line.includes(english.wall.statuses.done)));
+  const scopeWords = english.report.scope.split(" ");
+  const scopeStart = text.findIndex((line) => line.startsWith(scopeWords[0]));
+  const scopeEnd = text.indexOf("", scopeStart);
+  assert.deepEqual(text.slice(scopeStart, scopeEnd).join(" ").split(" "), scopeWords);
   await exports.renderBattleReport(populated, chineseCopy);
   assert.ok(text.some((line) => line.includes("名将") && line.includes(theme.runStates.running)));
   encode = false;
