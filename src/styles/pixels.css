@@ -33,3 +33,22 @@ button {
 button:active {
   transform: translateY(1px);
 }
+
+.camp-screen {
+  height: calc(100% - 36px);
+}
+
+.camp-canvas {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camp-canvas canvas {
+  display: block;
+  flex-shrink: 0;
+}
