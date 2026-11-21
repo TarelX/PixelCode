@@ -7,12 +7,14 @@ import ts from "typescript";
 async function store() {
   let callback;
   let failure;
+  let request;
+  let result;
   const source = await readFile(new URL("../src/camp/run.ts", import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } });
   const exports = {};
   const dependencies = {
     zustand: { create },
-    "@tauri-apps/api/core": { invoke: async () => { if (failure) throw failure; } },
+    "@tauri-apps/api/core": { invoke: async (name, args) => { request = { name, args }; if (failure) throw failure; return result; } },
     "@tauri-apps/api/event": { listen: async (_, receive) => { callback = receive; return () => {}; } },
   };
   new Function("require", "exports", outputText)((id) => dependencies[id], exports);
@@ -21,8 +23,27 @@ async function store() {
     state: () => exports.useRuns.getState(),
     event: (type, rest = {}) => callback({ payload: { camp_id: "camp", role_id: "role", run_id: 1, type, ...rest } }),
     fail: (error) => { failure = error; },
+    reply: (value) => { result = value; },
+    request: () => request,
   };
 }
+
+test("captain can pause for questions and resume with a delegated answer", async () => {
+  const run = await store();
+  const questions = ["Which browser?"];
+  run.reply(questions);
+  assert.deepEqual(await run.state().start("camp", "captain", 0, "Fix login"), questions);
+  run.event("started");
+  run.event("waiting");
+  assert.equal(run.state().runs.role.status, "waiting");
+  assert.equal(run.state().runs.role.artifact, undefined);
+  run.reply(null);
+  assert.equal(await run.state().start("camp", "captain", 0, "Fix login", { questions, answer: null }), null);
+  assert.deepEqual(run.request(), {
+    name: "start_role_run",
+    args: { campId: "camp", roleId: "captain", loadoutIndex: 0, prompt: "Fix login", clarification: { questions, answer: null } },
+  });
+});
 
 test("stream accumulation, tool, completion, dismissal, and stale or other-camp events", async () => {
   const run = await store();

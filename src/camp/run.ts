@@ -7,7 +7,7 @@ export interface RoleRun {
   run_id: number;
   task_id: string;
   artifact?: Artifact;
-  status: "running" | "completed" | "failed" | "stopped";
+  status: "running" | "waiting" | "completed" | "failed" | "stopped";
   text: string;
   tool: string;
   error: string;
@@ -18,18 +18,23 @@ interface RunEvent {
   artifact?: Artifact;
   camp_id: string;
   role_id: string;
-  type: "started" | "text" | "tool" | "completed" | "failed" | "stopped";
+  type: "started" | "text" | "tool" | "waiting" | "completed" | "failed" | "stopped";
   text?: string;
   name?: string;
   message?: string;
 }
+export interface Clarification {
+  questions: string[];
+  answer: string | null;
+}
+
 export const useRuns = create<{
   runs: Record<string, RoleRun>;
   busy: boolean;
   error: string;
   receive: (event: RunEvent) => void;
   dismiss: (id: string) => void;
-  start: (campId: string, roleId: string, loadoutIndex: number, prompt: string) => Promise<void>;
+  start: (campId: string, roleId: string, loadoutIndex: number, prompt: string, clarification?: Clarification) => Promise<string[] | null>;
   stop: () => Promise<void>;
 }>((set) => ({
   runs: {}, busy: false, error: "",
@@ -41,18 +46,18 @@ export const useRuns = create<{
       : { ...previous };
     if (event.type === "text") run.text = (run.text + (event.text ?? "")).slice(-32000);
     if (event.type === "tool") run.tool = event.name ?? "";
-    if (["completed", "failed", "stopped"].includes(event.type)) {
-      run.status = event.type as RoleRun["status"];
+    if (event.type === "completed" || event.type === "failed" || event.type === "stopped" || event.type === "waiting") {
+      run.status = event.type;
       run.error = event.message ?? "";
       run.artifact = event.artifact;
     }
     return { runs: { ...state.runs, [event.role_id]: run } };
   }),
   dismiss: (id) => set((state) => ({ runs: Object.fromEntries(Object.entries(state.runs).filter(([key]) => key !== id)) })),
-  start: async (campId, roleId, loadoutIndex, prompt) => {
+  start: async (campId, roleId, loadoutIndex, prompt, clarification) => {
     set({ busy: true, error: "" });
-    try { await invoke("start_role_run", { campId, roleId, loadoutIndex, prompt }); }
-    catch (error) { set({ error: String(error) }); }
+    try { return await invoke<string[] | null>("start_role_run", { campId, roleId, loadoutIndex, prompt, clarification }); }
+    catch (error) { set({ error: String(error) }); return null; }
     finally { set({ busy: false }); }
   },
   stop: async () => {

@@ -29,11 +29,12 @@ export function RunBubble({ id, run, anchor }: { id: string; run: RoleRun; ancho
     return () => observer.disconnect();
   }, []);
   const { below, tail, ...position } = bubblePosition(anchor, height);
+  const draft = run.artifact?.type === "plan";
   const dismiss = useRuns((s) => s.dismiss);
   useEffect(() => { if (text.current) text.current.scrollTop = text.current.scrollHeight; }, [run.text]);
   return <aside ref={bubble} className={`run-bubble run-bubble--${run.status}${below ? " run-bubble--below" : ""}`} style={{ ...position, maxHeight: anchor.canvas.height - 16, "--tail-left": `${tail}px` } as CSSProperties} aria-label={theme.taskOutput}>
-    <header><strong>{theme.runStates[run.status]}</strong>{run.status !== "running" && <button aria-label={theme.taskDismiss} onClick={() => dismiss(id)}>×</button>}</header>
-    <pre ref={text}>{run.text || theme.taskWaiting}</pre>
+    <header><strong>{draft ? theme.planDraft : theme.runStates[run.status]}</strong>{run.status !== "running" && <button aria-label={theme.taskDismiss} onClick={() => dismiss(id)}>×</button>}</header>
+    {(run.text || run.status === "running") && <pre ref={text}>{run.text || theme.taskWaiting}</pre>}
     {run.tool && <small>{theme.taskTool}: {run.tool}</small>}
     {run.error && <p role="alert">{run.error}</p>}
     {run.artifact && <div className="run-artifact">

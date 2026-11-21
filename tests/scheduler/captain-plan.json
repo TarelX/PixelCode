@@ -1,0 +1,28 @@
+{
+  "scenario": "bug-fix",
+  "recruited_roles": ["debugger", "backend"],
+  "tasks": [
+    {
+      "id": "fix",
+      "title": "修复会话续期",
+      "description": "修复刷新页面后登录状态丢失的问题。",
+      "role_id": "backend",
+      "depends_on": ["reproduce"],
+      "input_artifacts": ["repro.md"],
+      "output_artifacts": ["fix.md"],
+      "acceptance_criteria": "刷新页面后登录状态仍有效，回归测试通过。",
+      "check_command": { "program": "npm", "args": ["test"] }
+    },
+    {
+      "id": "reproduce",
+      "title": "复现登录状态丢失",
+      "description": "记录登录后刷新页面的行为。",
+      "role_id": "debugger",
+      "depends_on": [],
+      "input_artifacts": [],
+      "output_artifacts": ["repro.md"],
+      "acceptance_criteria": "报告包含复现步骤和预期结果。",
+      "check_command": null
+    }
+  ]
+}

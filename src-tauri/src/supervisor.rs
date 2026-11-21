@@ -10,7 +10,7 @@ use tauri::{Emitter, Manager, WebviewWindow};
 
 use crate::{
     adapters::{claude_code, codex},
-    artifacts, camps, roles,
+    artifacts, camps, plans, roles,
 };
 
 const ROLE_RUN_EVENT: &str = "role-run";
@@ -122,6 +122,7 @@ pub(crate) enum RunUpdate {
     Started,
     Text { text: String },
     Tool { name: String },
+    Waiting,
     Completed,
     Stopped,
     Failed { message: String },
@@ -145,7 +146,8 @@ pub async fn start_role_run(
     role_id: String,
     loadout_index: usize,
     prompt: String,
-) -> Result<(), String> {
+    clarification: Option<plans::Clarification>,
+) -> Result<Option<Vec<String>>, String> {
     if prompt.trim().is_empty() {
         return Err("任务内容不能为空".into());
     }
@@ -156,23 +158,39 @@ pub async fn start_role_run(
             TryLockError::Poisoned(_) => "无法访问角色运行状态",
         })?;
         state.stopped.store(false, Ordering::SeqCst);
-        let (cwd, config) = {
+        let (cwd, mut config, roster) = {
             let state = window.state::<Mutex<Connection>>();
             let connection = state.lock().map_err(|_| "无法访问大营数据库")?;
             let cwd = camps::run_root(&connection, &camp_id)?;
             let config = roles::run_config(&connection, &camp_id, &role_id, loadout_index)?;
-            (cwd, config)
+            let roster = config
+                .is_captain
+                .then(|| roles::planning_roster(&connection, &camp_id))
+                .transpose()?;
+            (cwd, config, roster)
+        };
+        let input = if let Some(roster) = &roster {
+            config.system_prompt.push_str(plans::INSTRUCTIONS);
+            Some(plans::input(&prompt, roster, clarification.as_ref())?)
+        } else if clarification.is_some() {
+            return Err("只有队长可以继续澄清任务".into());
+        } else {
+            None
         };
         let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
         let millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("无法读取系统时间：{e}"))?
-            .as_millis();
-        let task_id = format!("run-{millis}-{run_id}");
+            .as_millis() as i64;
+        let prefix = if config.is_captain { "plan" } else { "run" };
+        let task_id = format!("{prefix}-{millis}-{run_id}");
         let output = std::cell::RefCell::new(String::new());
         let artifact = std::cell::RefCell::new(None);
         let emit = |update| {
             if let RunUpdate::Text { ref text } = update {
+                if config.is_captain {
+                    return Ok(());
+                }
                 output.borrow_mut().push_str(text);
             }
             window
@@ -194,7 +212,7 @@ pub async fn start_role_run(
             cwd: &cwd,
             model: &config.model,
             system_prompt: &config.system_prompt,
-            prompt: &prompt,
+            prompt: input.as_deref().unwrap_or(&prompt),
             permissions: &config.permissions,
         };
         let result = match config.cli.as_str() {
@@ -203,25 +221,52 @@ pub async fn start_role_run(
             _ => Err(format!("不支持的 CLI：{}", config.cli)),
         };
         if state.stopped.load(Ordering::SeqCst) {
-            return emit(RunUpdate::Stopped);
+            emit(RunUpdate::Stopped)?;
+            return Ok(None);
         }
-        let result = result.and_then(|()| {
+        let result = result.and_then(|final_text| {
+            let plan = if let Some(roster) = &roster {
+                match plans::parse(&final_text, roster, clarification.as_ref())? {
+                    plans::Reply::Draft(plan) => Some(plan),
+                    plans::Reply::Clarify(reply) => return Ok(Some(reply.questions)),
+                }
+            } else {
+                None
+            };
             let connection = window.state::<Mutex<Connection>>();
-            let connection = connection.lock().map_err(|_| "无法访问产物数据库")?;
+            let mut connection = connection.lock().map_err(|_| "无法访问产物数据库")?;
             let root = window.state::<artifacts::ArtifactRoot>();
-            *artifact.borrow_mut() = Some(artifacts::write_artifact(
-                &connection,
-                &root.0,
-                &camp_id,
-                &task_id,
-                "report",
-                std::path::Path::new(config.artifact_name),
-                &output.borrow(),
-            )?);
-            Ok::<(), String>(())
+            *artifact.borrow_mut() = Some(if let Some(plan) = plan {
+                plan.save(
+                    &mut connection,
+                    &root.0,
+                    &camp_id,
+                    &task_id,
+                    &prompt,
+                    millis,
+                )?
+            } else {
+                artifacts::write_artifact(
+                    &connection,
+                    &root.0,
+                    &camp_id,
+                    &task_id,
+                    "report",
+                    std::path::Path::new(config.artifact_name),
+                    &output.borrow(),
+                )?
+            });
+            Ok(None)
         });
         match result {
-            Ok(()) => emit(RunUpdate::Completed),
+            Ok(questions) => {
+                emit(if questions.is_some() {
+                    RunUpdate::Waiting
+                } else {
+                    RunUpdate::Completed
+                })?;
+                Ok(questions)
+            }
             Err(message) => {
                 let _ = emit(RunUpdate::Failed {
                     message: message.clone(),
