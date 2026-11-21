@@ -28,6 +28,7 @@ pub fn run() {
             scheduler::start_plan_execution,
             artifacts::read_artifact,
             artifacts::list_artifacts,
+            plans::latest_plan,
             supervisor::stop_role_run
         ])
         .setup(|app| {

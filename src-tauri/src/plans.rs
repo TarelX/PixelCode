@@ -3,10 +3,57 @@ use std::{
     path::Path,
 };
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use crate::{artifacts, roles::PlanningRole};
+
+#[derive(Serialize)]
+pub(crate) struct StoredPlan {
+    id: String,
+    status: String,
+    scenario: String,
+    user_request: String,
+    created_at: i64,
+    plan: Plan,
+}
+
+fn latest(conn: &Connection, camp_id: &str) -> Result<Option<StoredPlan>, String> {
+    conn.query_row(
+        "SELECT id, status, scenario, user_request, created_at, plan_json FROM plans
+         WHERE camp_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        [camp_id],
+        |row| {
+            let json: String = row.get(5)?;
+            let plan = serde_json::from_str(&json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(StoredPlan {
+                id: row.get(0)?,
+                status: row.get(1)?,
+                scenario: row.get(2)?,
+                user_request: row.get(3)?,
+                created_at: row.get(4)?,
+                plan,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| format!("无法读取锦囊计划：{error}"))
+}
+
+#[tauri::command]
+pub(crate) fn latest_plan(
+    conn: tauri::State<'_, std::sync::Mutex<Connection>>,
+    camp_id: String,
+) -> Result<Option<StoredPlan>, String> {
+    let conn = conn.lock().map_err(|error| error.to_string())?;
+    latest(&conn, &camp_id)
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -26,6 +73,8 @@ pub(crate) struct Plan {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Task {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) status: Option<String>,
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) description: String,
@@ -253,6 +302,39 @@ impl Plan {
 mod tests {
     use super::*;
     use serde_json::{Value, json};
+
+    #[test]
+    fn latest_plan_is_scoped_ordered_and_parsed() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(include_str!("../migrations/001_initial.sql"))
+            .unwrap();
+        assert!(latest(&conn, "camp").unwrap().is_none());
+        let fixture = include_str!("../../tests/scheduler/captain-plan.json");
+        for (id, camp, time) in [
+            ("old", "camp", 1),
+            ("new", "camp", 2),
+            ("other", "other", 3),
+        ] {
+            conn.execute(
+                "INSERT INTO plans VALUES (?1, ?2, 'bug-fix', 'Fix login', ?3, 'draft', ?4)",
+                params![id, camp, fixture, time],
+            )
+            .unwrap();
+        }
+        let stored = latest(&conn, "camp").unwrap().unwrap();
+        assert_eq!(stored.id, "new");
+        assert_eq!(stored.status, "draft");
+        assert_eq!(stored.scenario, "bug-fix");
+        assert_eq!(stored.user_request, "Fix login");
+        assert_eq!(stored.created_at, 2);
+        assert_eq!(
+            serde_json::to_value(stored.plan).unwrap(),
+            serde_json::from_str::<Value>(fixture).unwrap()
+        );
+        conn.execute("UPDATE plans SET plan_json = '{}' WHERE id = 'new'", [])
+            .unwrap();
+        assert!(latest(&conn, "camp").is_err());
+    }
 
     fn roster() -> Vec<PlanningRole> {
         crate::roles::planning_roster(&crate::roles::tests::connection(), "camp").unwrap()

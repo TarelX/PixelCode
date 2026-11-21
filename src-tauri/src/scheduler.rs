@@ -48,11 +48,18 @@ fn prepare(conn: &mut Connection, camp: &str, id: &str) -> Result<Plan, String> 
         )
         .map_err(|_| "计划不存在、不属于此大营或尚未点将批准")?;
     let roster = roles::planning_roster(&tx, camp)?;
-    let plans::Reply::Draft(plan) = plans::parse(&json, &roster, None)? else {
+    let plans::Reply::Draft(mut plan) = plans::parse(&json, &roster, None)? else {
         return Err("批准的计划不是锦囊草案".into());
     };
-    tx.execute("UPDATE plans SET status='executing' WHERE id=?1", [id])
-        .map_err(db_error)?;
+    for task in &mut plan.tasks {
+        task.status = Some("pending".into());
+    }
+    let json = serde_json::to_string(&plan).map_err(|e| format!("无法编码锦囊计划：{e}"))?;
+    tx.execute(
+        "UPDATE plans SET status='executing',plan_json=?2 WHERE id=?1",
+        params![id, json],
+    )
+    .map_err(db_error)?;
     for task in &plan.tasks {
         let dependencies: Vec<_> = task
             .depends_on
@@ -102,12 +109,35 @@ fn status(
 ) -> Result<(), String> {
     event.status = next.into();
     event.message = message;
-    conn.execute("UPDATE tasks SET status=?1,attempts=?2,review_rounds=?3,updated_at=unixepoch() WHERE id=?4",
+    let tx = conn.unchecked_transaction().map_err(db_error)?;
+    tx.execute("UPDATE tasks SET status=?1,attempts=?2,review_rounds=?3,updated_at=unixepoch() WHERE id=?4",
         params![next, event.attempts, event.review_rounds, event.task_id]).map_err(db_error)?;
+    let json: String = tx
+        .query_row(
+            "SELECT plan_json FROM plans WHERE id=?1",
+            [&event.plan_id],
+            |row| row.get(0),
+        )
+        .map_err(db_error)?;
+    let mut plan: Plan =
+        serde_json::from_str(&json).map_err(|e| format!("无法读取锦囊计划：{e}"))?;
+    let task = plan
+        .tasks
+        .iter_mut()
+        .find(|task| format!("{}-{}", event.plan_id, task.id) == event.task_id)
+        .ok_or("计划中未找到此锦囊")?;
+    task.status = Some(next.into());
+    let json = serde_json::to_string(&plan).map_err(|e| format!("无法编码锦囊计划：{e}"))?;
+    tx.execute(
+        "UPDATE plans SET plan_json=?2 WHERE id=?1",
+        params![event.plan_id, json],
+    )
+    .map_err(db_error)?;
     if let Some(message) = &event.message {
-        conn.execute("INSERT INTO messages (id,task_id,role,type,content,created_at) VALUES (?1,?2,'system','scheduler',?3,unixepoch())",
+        tx.execute("INSERT INTO messages (id,task_id,role,type,content,created_at) VALUES (?1,?2,'system','scheduler',?3,unixepoch())",
             params![format!("{}-{next}-{}-{}", event.task_id, event.attempts, event.review_rounds), event.task_id, message]).map_err(db_error)?;
     }
+    tx.commit().map_err(db_error)?;
     runner.emit(event)
 }
 
@@ -529,12 +559,73 @@ mod tests {
     }
 
     fn state(conn: &Connection, task: &str) -> (String, u32, u32) {
-        conn.query_row(
-            "SELECT status,attempts,review_rounds FROM tasks WHERE id=?1",
-            [format!("plan-{task}")],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        let state: (String, u32, u32) = conn
+            .query_row(
+                "SELECT status,attempts,review_rounds FROM tasks WHERE id=?1",
+                [format!("plan-{task}")],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        let json: String = conn
+            .query_row("SELECT plan_json FROM plans WHERE id='plan'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let plan: Plan = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            plan.tasks
+                .iter()
+                .find(|entry| entry.id == task)
+                .unwrap()
+                .status
+                .as_deref(),
+            Some(state.0.as_str())
+        );
+        state
+    }
+
+    #[test]
+    fn prepare_resets_existing_json_statuses_and_transitions_are_atomic() {
+        let mut conn = connection("approved");
+        let json: String = conn
+            .query_row("SELECT plan_json FROM plans", [], |row| row.get(0))
+            .unwrap();
+        let mut plan: Plan = serde_json::from_str(&json).unwrap();
+        for task in &mut plan.tasks {
+            task.status = Some("done".into());
+        }
+        conn.execute(
+            "UPDATE plans SET plan_json=?1",
+            [serde_json::to_string(&plan).unwrap()],
         )
-        .unwrap()
+        .unwrap();
+        prepare(&mut conn, "camp", "plan").unwrap();
+        assert_eq!(state(&conn, "fix").0, "pending");
+        assert_eq!(state(&conn, "reproduce").0, "pending");
+        let mut event = TaskEvent {
+            plan_id: "plan".into(),
+            task_id: "plan-reproduce".into(),
+            status: "pending".into(),
+            attempts: 0,
+            review_rounds: 0,
+            message: None,
+        };
+        let fake = Fake::default();
+        for next in [
+            "running",
+            "checking",
+            "reviewing",
+            "blocked",
+            "failed",
+            "pending",
+            "done",
+        ] {
+            status(&conn, &fake, &mut event, next, None).unwrap();
+            assert_eq!(state(&conn, "reproduce").0, next);
+        }
+        conn.execute_batch("CREATE TRIGGER deny_plan_update BEFORE UPDATE ON plans BEGIN SELECT RAISE(ABORT, 'test'); END").unwrap();
+        assert!(status(&conn, &fake, &mut event, "running", None).is_err());
+        assert_eq!(state(&conn, "reproduce").0, "done");
     }
 
     #[test]
