@@ -1,5 +1,6 @@
 mod adapters;
 mod artifacts;
+mod battle_report;
 mod camps;
 mod db;
 mod git;
@@ -18,6 +19,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             adapters::detect_clis,
+            battle_report::export_battle_report,
+            battle_report::battle_report_counts,
             camps::open_camp,
             camps::list_recent_camps,
             roles::list_roles,

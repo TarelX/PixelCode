@@ -11,6 +11,7 @@ import { RoleCard } from "./RoleCard";
 import { RoleRoster } from "./RoleRoster";
 import { TaskPanel } from "./TaskPanel";
 import { TaskBoard } from "./TaskBoard";
+import { BattleReportButton } from "./BattleReportButton";
 import { PixelButton } from "./components/PixelButton";
 import { RunBubble } from "./RunBubble";
 import { listenToRuns, useRuns } from "../camp/run";
@@ -33,6 +34,7 @@ export function CampView() {
   const roleError = useRoster((s) => s.error);
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Container | null>(null);
+  const appRef = useRef<Application | null>(null);
   const generalsRef = useRef<{ generals: GeneralSprite[]; marker: Graphics } | null>(null);
   const [stageVersion, setStageVersion] = useState(0);
   const [generalsVersion, setGeneralsVersion] = useState(0);
@@ -143,6 +145,7 @@ export function CampView() {
         ready = true;
         resize();
         stageRef.current = app.stage;
+        appRef.current = app;
         setStageVersion((version) => version + 1);
       } catch (reason) {
         if (!cancelled) {
@@ -158,6 +161,7 @@ export function CampView() {
       cancelled = true;
       observer.disconnect();
       stageRef.current = null;
+      appRef.current = null;
       if (ready) app.destroy(true, { children: true });
       ready = false;
     };
@@ -213,7 +217,10 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
-      <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || zh.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span></div>
+      <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || zh.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><div className="camp-heading-actions">
+        <span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span>
+        {camp && <BattleReportButton key={camp.id} camp={camp} snapshot={() => appRef.current?.renderer.extract.canvas({ target: appRef.current.stage }) as HTMLCanvasElement | undefined} />}
+      </div></div>
       {(roleError || error) && <p role="alert">{roleError || error}</p>}
       <div className="camp-body">
         <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef}>
