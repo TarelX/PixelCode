@@ -1,0 +1,14 @@
+:root {
+  --outline: #2b1b0e;
+  --grass-a: #4c8f3a;
+  --grass-b: #3f7a30;
+  --path: #c3a36b;
+  --roof: #c44b3a;
+  --wall: #f3e2c0;
+  --state-busy: #f5c51b;
+  --state-waiting: #3d9b4a;
+  --state-done: #3a6fbf;
+  --state-error: #c43b3b;
+  --text-light: #f8f0dc;
+  --text-dark: #2b1b0e;
+}
