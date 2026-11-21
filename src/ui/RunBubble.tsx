@@ -2,11 +2,24 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import { useRuns, type RoleRun } from "../camp/run";
 import { bubblePosition, type BubbleAnchor } from "../camp/bubble";
 import theme from "../../themes/three-kingdoms/ui.json";
+import { readArtifact } from "../orchestrator/artifact-manager";
+import { PixelDialog } from "./PixelDialog";
 
 export function RunBubble({ id, run, anchor }: { id: string; run: RoleRun; anchor: BubbleAnchor }) {
   const text = useRef<HTMLPreElement>(null);
   const bubble = useRef<HTMLElement>(null);
   const [height, setHeight] = useState(0);
+  const [viewer, setViewer] = useState<{ content: string } | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const view = async () => {
+    if (!run.artifact) return;
+    setLoading(true);
+    setError("");
+    try { setViewer(await readArtifact(run.artifact.id)); }
+    catch (error) { setError(String(error)); }
+    finally { setLoading(false); }
+  };
   useLayoutEffect(() => {
     const element = bubble.current!;
     const measure = () => setHeight(element.offsetHeight);
@@ -23,5 +36,15 @@ export function RunBubble({ id, run, anchor }: { id: string; run: RoleRun; ancho
     <pre ref={text}>{run.text || theme.taskWaiting}</pre>
     {run.tool && <small>{theme.taskTool}: {run.tool}</small>}
     {run.error && <p role="alert">{run.error}</p>}
+    {run.artifact && <div className="run-artifact">
+      <strong>{run.artifact.file_path.split("/").pop()}</strong>
+      <small>{run.artifact.absolute_path}</small>
+      <button disabled={loading} onClick={() => void view()}>{loading ? theme.artifactLoading : theme.artifactView}</button>
+    </div>}
+    {error && <p role="alert">{error}</p>}
+    <PixelDialog open={viewer !== null} title={theme.artifactTitle} closeLabel={theme.artifactClose} onClose={() => setViewer(null)}>
+      <p className="artifact-location">{run.artifact?.absolute_path}</p>
+      <pre className="artifact-content">{viewer?.content}</pre>
+    </PixelDialog>
   </aside>;
 }

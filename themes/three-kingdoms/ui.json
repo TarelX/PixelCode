@@ -1,4 +1,8 @@
 {
+  "artifactTitle": "产物查看",
+  "artifactView": "查看产物",
+  "artifactClose": "关闭",
+  "artifactLoading": "读取中…",
   "taskTitle": "分派任务",
   "taskSelect": "请先点选一位名将",
   "taskLoadout": "武器配置",

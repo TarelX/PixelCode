@@ -63,3 +63,17 @@ test("failed and stopped states, bounded text, and command errors", async () => 
   await run.state().stop();
   assert.equal(run.state().error, "Cannot stop CLI");
 });
+
+test("completion retains task and artifact metadata without leaking it into a new run", async () => {
+  const run = await store();
+  const artifact = { id: "artifact-1", file_path: "camp/task/output.md", absolute_path: "local-output.md" };
+  run.event("started", { task_id: "task" });
+  run.event("completed", { task_id: "task", artifact });
+  assert.equal(run.state().runs.role.task_id, "task");
+  assert.deepEqual(run.state().runs.role.artifact, artifact);
+  run.event("started", { run_id: 2, task_id: "next-task" });
+  assert.equal(run.state().runs.role.artifact, undefined);
+  run.event("failed", { run_id: 2, message: "无法保存产物记录" });
+  assert.equal(run.state().runs.role.artifact, undefined);
+  assert.equal(run.state().runs.role.error, "无法保存产物记录");
+});
