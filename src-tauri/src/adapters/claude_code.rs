@@ -326,6 +326,35 @@ mod tests {
     }
 
     #[test]
+    fn reviewer_has_only_read_tools() {
+        let config = crate::roles::tests::reviewer_config();
+        let cmd = command(&StartOptions {
+            cwd: Path::new("camp"),
+            model: &config.model,
+            system_prompt: &config.system_prompt,
+            prompt: "review",
+            permissions: &config.permissions,
+        })
+        .unwrap();
+        let args = cmd
+            .get_args()
+            .map(|arg| arg.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--tools", "Read,Grep,Glob"])
+        );
+        let denied = &args[args
+            .iter()
+            .position(|arg| *arg == "--disallowedTools")
+            .unwrap()
+            + 1..];
+        for tool in ["Write", "Edit", "Bash", "NotebookEdit"] {
+            assert!(denied.contains(&tool));
+        }
+    }
+
+    #[test]
     fn command_uses_role_tools_and_keeps_prompt_off_argv() {
         let cwd = Path::new("a camp");
         let permissions = Permissions {

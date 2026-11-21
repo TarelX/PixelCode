@@ -266,6 +266,26 @@ mod tests {
     }
 
     #[test]
+    fn reviewer_uses_read_only_sandbox() {
+        let config = crate::roles::tests::reviewer_config();
+        let cmd = command(&StartOptions {
+            cwd: Path::new("camp"),
+            model: &config.model,
+            system_prompt: &config.system_prompt,
+            prompt: "review",
+            permissions: &config.permissions,
+        });
+        let args = cmd
+            .get_args()
+            .map(|arg| arg.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--sandbox", "read-only"])
+        );
+    }
+
+    #[test]
     fn command_keeps_task_off_argv_and_uses_conservative_sandbox() {
         let cwd = Path::new("a camp");
         for (allow, deny, sandbox) in [

@@ -156,13 +156,12 @@ pub async fn start_role_run(
             TryLockError::Poisoned(_) => "无法访问角色运行状态",
         })?;
         state.stopped.store(false, Ordering::SeqCst);
-        let (cwd, cli, model, system_prompt, permissions) = {
+        let (cwd, config) = {
             let state = window.state::<Mutex<Connection>>();
             let connection = state.lock().map_err(|_| "无法访问大营数据库")?;
             let cwd = camps::run_root(&connection, &camp_id)?;
-            let (cli, model, system_prompt, permissions) =
-                roles::run_config(&connection, &camp_id, &role_id, loadout_index)?;
-            (cwd, cli, model, system_prompt, permissions)
+            let config = roles::run_config(&connection, &camp_id, &role_id, loadout_index)?;
+            (cwd, config)
         };
         let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
         let millis = std::time::SystemTime::now()
@@ -193,15 +192,15 @@ pub async fn start_role_run(
         };
         let options = claude_code::StartOptions {
             cwd: &cwd,
-            model: &model,
-            system_prompt: &system_prompt,
+            model: &config.model,
+            system_prompt: &config.system_prompt,
             prompt: &prompt,
-            permissions: &permissions,
+            permissions: &config.permissions,
         };
-        let result = match cli.as_str() {
+        let result = match config.cli.as_str() {
             "claude-code" => claude_code::start(options, &state, &emit),
             "codex" => codex::start(options, &state, &emit),
-            _ => Err(format!("不支持的 CLI：{cli}")),
+            _ => Err(format!("不支持的 CLI：{}", config.cli)),
         };
         if state.stopped.load(Ordering::SeqCst) {
             return emit(RunUpdate::Stopped);
@@ -216,7 +215,7 @@ pub async fn start_role_run(
                 &camp_id,
                 &task_id,
                 "report",
-                std::path::Path::new("output.md"),
+                std::path::Path::new(config.artifact_name),
                 &output.borrow(),
             )?);
             Ok::<(), String>(())
