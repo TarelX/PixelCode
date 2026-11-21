@@ -17,7 +17,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             adapters::detect_clis,
             camps::open_camp,
-            camps::list_recent_camps
+            camps::list_recent_camps,
+            roles::list_roles,
+            roles::save_role,
+            roles::delete_role
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

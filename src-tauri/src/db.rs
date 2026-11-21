@@ -2,7 +2,10 @@ use std::path::Path;
 
 use rusqlite::{Connection, TransactionBehavior};
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/001_initial.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/001_initial.sql"),
+    include_str!("../migrations/002_role_task_types.sql"),
+];
 
 pub fn open(data_dir: &Path) -> Result<Connection, Box<dyn std::error::Error>> {
     std::fs::create_dir_all(data_dir)
@@ -66,6 +69,29 @@ mod tests {
                 "tasks"
             ]
         );
+    }
+
+    #[test]
+    fn role_upgrade_preserves_existing_configuration() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(MIGRATIONS[0]).unwrap();
+        connection.pragma_update(None, "user_version", 1).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO roles (id, role_type, name, personality, skills_json,
+             loadouts_json, permissions_json, created_at)
+             VALUES ('custom', 'backend', '自定义', '人设', '[]', '[]', '{}', 42)",
+            )
+            .unwrap();
+        migrate(&mut connection).unwrap();
+        let stored: (String, i64, String) = connection
+            .query_row(
+                "SELECT name, created_at, task_types_json FROM roles WHERE id = 'custom'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("自定义".into(), 42, "[]".into()));
     }
 
     #[test]
