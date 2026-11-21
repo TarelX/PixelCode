@@ -221,6 +221,33 @@ mod tests {
     }
 
     #[test]
+    fn reviewer_report_is_saved_as_review_md() {
+        let dir = TestDir::new();
+        let conn = crate::db::open(dir.path()).unwrap();
+        let root = dir.path().join("artifacts");
+        let config = crate::roles::tests::reviewer_config();
+        for content in ["", "结论：通过\n问题清单：未发现问题"] {
+            let artifact = write_artifact(
+                &conn,
+                &root,
+                "camp",
+                "review",
+                "report",
+                Path::new(config.artifact_name),
+                content,
+            )
+            .unwrap();
+            assert_eq!(artifact.file_path, "camp/review/review.md");
+            assert_eq!(
+                fs::read_to_string(&artifact.absolute_path).unwrap(),
+                content
+            );
+            assert_eq!(read(&conn, &root, &artifact.id).unwrap().content, content);
+        }
+        assert!(!root.join("camp/review/output.md").exists());
+    }
+
+    #[test]
     fn nested_roundtrip_and_unicode_preview() {
         let dir = TestDir::new();
         let conn = crate::db::open(dir.path()).unwrap();

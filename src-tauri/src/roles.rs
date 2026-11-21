@@ -75,6 +75,21 @@ pub struct Permissions {
     pub(crate) deny: Vec<String>,
 }
 
+const REVIEW_TOOLS: &[&str] = &["Read", "Grep", "Glob"];
+const REVIEW_DENY: &[&str] = &["Write", "Edit", "Bash", "NotebookEdit"];
+
+fn reviewer_tool(rule: &str) -> bool {
+    REVIEW_TOOLS.contains(&rule.split_once('(').map_or(rule, |(tool, _)| tool))
+}
+
+pub(crate) struct RunConfig {
+    pub cli: String,
+    pub model: String,
+    pub system_prompt: String,
+    pub permissions: Permissions,
+    pub artifact_name: &'static str,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoleConfig {
     id: String,
@@ -117,6 +132,15 @@ fn skills() -> Vec<SkillInfo> {
 }
 
 fn validate(role: &RoleConfig) -> Result<(), String> {
+    if role.role_type == "reviewer"
+        && role
+            .permissions
+            .allow
+            .iter()
+            .any(|rule| !reviewer_tool(rule))
+    {
+        return Err("审查员仅允许只读工具 Read、Grep、Glob，不能允许写入或执行命令".into());
+    }
     if role.id.is_empty()
         || !role.id.split('-').all(|part| {
             !part.is_empty()
@@ -225,8 +249,8 @@ pub(crate) fn run_config(
     camp_id: &str,
     role_id: &str,
     loadout_index: usize,
-) -> Result<(String, String, String, Permissions), String> {
-    let role = effective_roles(connection, Some(camp_id))?
+) -> Result<RunConfig, String> {
+    let mut role = effective_roles(connection, Some(camp_id))?
         .into_iter()
         .find(|role| role.id == role_id)
         .ok_or("未找到要运行的角色")?;
@@ -234,6 +258,17 @@ pub(crate) fn run_config(
         .loadouts
         .get(loadout_index)
         .ok_or("未找到角色的武器槽")?;
+    let artifact_name = if role.role_type == "reviewer" {
+        role.permissions.allow.retain(|rule| reviewer_tool(rule));
+        for tool in REVIEW_DENY {
+            if !role.permissions.deny.iter().any(|rule| rule == tool) {
+                role.permissions.deny.push((*tool).into());
+            }
+        }
+        "review.md"
+    } else {
+        "output.md"
+    };
     let mut system_prompt = role.personality;
     for id in role.skills {
         let (_, text) = SKILLS
@@ -243,12 +278,13 @@ pub(crate) fn run_config(
         system_prompt.push_str("\n\n");
         system_prompt.push_str(text);
     }
-    Ok((
-        loadout.cli.clone(),
-        loadout.model.clone(),
+    Ok(RunConfig {
+        cli: loadout.cli.clone(),
+        model: loadout.model.clone(),
         system_prompt,
-        role.permissions,
-    ))
+        permissions: role.permissions,
+        artifact_name,
+    })
 }
 
 fn upsert(connection: &Connection, role: &RoleConfig, camp_id: Option<&str>) -> Result<(), String> {
@@ -323,7 +359,7 @@ pub fn delete_role(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn connection() -> Connection {
@@ -366,29 +402,102 @@ mod tests {
         role.loadouts[0].model = "haiku".into();
         role.permissions.allow = vec!["Read".into()];
         upsert(&connection, &role, Some("camp")).unwrap();
-        let (cli, model, system_prompt, permissions) =
-            run_config(&connection, "camp", &role.id, 0).unwrap();
-        assert_eq!(cli, "claude-code");
-        assert_eq!(model, "haiku");
+        let config = run_config(&connection, "camp", &role.id, 0).unwrap();
+        assert_eq!(config.cli, "claude-code");
+        assert_eq!(config.model, "haiku");
         assert_eq!(
-            system_prompt,
+            config.system_prompt,
             format!(
                 "Camp persona\n\n{}",
                 include_str!("../../skills/test-writing/SKILL.md")
             )
         );
-        assert_eq!(permissions.allow, ["Read"]);
+        assert_eq!(config.permissions.allow, ["Read"]);
+        assert_eq!(config.artifact_name, "output.md");
         assert_eq!(
             run_config(&connection, "another-camp", &role.id, 0)
                 .unwrap()
-                .1,
+                .model,
             "sonnet"
         );
         assert_eq!(
-            run_config(&connection, "camp", &role.id, 1).unwrap().0,
+            run_config(&connection, "camp", &role.id, 1).unwrap().cli,
             "codex"
         );
         assert!(run_config(&connection, "camp", &role.id, 99).is_err());
+    }
+
+    pub(crate) fn reviewer_config() -> RunConfig {
+        run_config(&connection(), "camp", "reviewer", 0).unwrap()
+    }
+
+    #[test]
+    fn reviewer_permissions_and_artifact_are_read_only() {
+        let config = reviewer_config();
+        assert_eq!(config.permissions.allow, ["Read", "Grep", "Glob"]);
+        assert_eq!(config.artifact_name, "review.md");
+        for tool in REVIEW_DENY {
+            assert!(config.permissions.deny.iter().any(|rule| rule == tool));
+        }
+    }
+
+    #[test]
+    fn reviewer_overrides_are_rejected_and_legacy_permissions_are_clamped() {
+        let connection = connection();
+        let mut role = presets()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.role_type == "reviewer")
+            .unwrap();
+        for id in ["reviewer", "custom-reviewer"] {
+            role.id = id.into();
+            role.name = "Custom".into();
+            for tool in [
+                "Write",
+                "Edit",
+                "Bash(git status *)",
+                "NotebookEdit",
+                "mcp__write",
+            ] {
+                role.permissions.allow = vec!["Read".into(), tool.into()];
+                assert!(
+                    upsert(&connection, &role, Some("camp"))
+                        .unwrap_err()
+                        .contains("审查员仅允许只读工具")
+                );
+            }
+            role.permissions.allow = vec!["Read".into()];
+            role.permissions.deny.clear();
+            upsert(&connection, &role, Some("camp")).unwrap();
+            connection.execute(
+                "UPDATE roles SET permissions_json = ?1 WHERE id = ?2",
+                params![r#"{"allow":["Read","Write","Edit","Bash","NotebookEdit","mcp__write"],"deny":[]}"#, id],
+            ).unwrap();
+            let config = run_config(&connection, "camp", id, 0).unwrap();
+            assert_eq!(config.permissions.allow, ["Read"]);
+            for tool in REVIEW_DENY {
+                assert!(config.permissions.deny.iter().any(|rule| rule == tool));
+            }
+            role.permissions.allow.clear();
+            upsert(&connection, &role, Some("camp")).unwrap();
+            assert!(
+                run_config(&connection, "camp", id, 0)
+                    .unwrap()
+                    .permissions
+                    .allow
+                    .is_empty()
+            );
+            role.permissions.allow = vec!["Read(src/**)".into()];
+            role.permissions.deny = vec!["Read(secrets/**)".into()];
+            upsert(&connection, &role, Some("camp")).unwrap();
+            let config = run_config(&connection, "camp", id, 0).unwrap();
+            assert_eq!(config.permissions.allow, ["Read(src/**)"]);
+            assert!(config.permissions.deny.contains(&"Read(secrets/**)".into()));
+        }
+        let config = run_config(&connection, "camp", "frontend", 0).unwrap();
+        assert!(config.permissions.allow.iter().any(|tool| tool == "Write"));
+        assert!(!config.permissions.deny.iter().any(|tool| tool == "Bash"));
+        assert!(run_config(&connection, "camp", "missing", 0).is_err());
     }
 
     #[test]
