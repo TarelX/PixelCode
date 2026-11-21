@@ -1,4 +1,5 @@
 mod adapters;
+mod camps;
 mod db;
 mod git;
 mod roles;
@@ -12,7 +13,12 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![adapters::detect_clis])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            adapters::detect_clis,
+            camps::open_camp,
+            camps::list_recent_camps
+        ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let connection = db::open(&data_dir)?;
