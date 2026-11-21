@@ -8,6 +8,17 @@ const SHEET_FRAMES = 4;
 
 const spriteFiles = import.meta.glob<string>("/assets/sprites/*.png", { query: "?url", import: "default", eager: true });
 
+export const avatarFiles = Object.keys(spriteFiles)
+  .filter((path) => !path.includes("/bubble-")).map((path) => path.split("/").pop()!).sort();
+
+export function avatarFile(avatar: string | null): string {
+  return avatar && spriteFiles[`/assets/sprites/${avatar}`] ? avatar : avatarFiles[0];
+}
+
+export function avatarUrl(avatar: string | null): string {
+  return spriteFiles[`/assets/sprites/${avatarFile(avatar)}`];
+}
+
 async function loadTexture(file: string): Promise<Texture> {
   const url = spriteFiles[`/assets/sprites/${file}`];
   if (!url) throw new Error(`缺少像素素材：assets/sprites/${file}`);
@@ -53,10 +64,8 @@ export class GeneralSprite extends Container {
 }
 
 export async function loadGenerals(roles: RoleConfig[]): Promise<GeneralSprite[]> {
-  const fallback = Object.keys(spriteFiles).sort().find((path) => !path.includes("/bubble-"))!.split("/").pop()!;
   const [wait, error, ...sheets] = await Promise.all(
-    ["bubble-wait.png", "bubble-error.png", ...roles.map((role) =>
-      role.avatar && spriteFiles[`/assets/sprites/${role.avatar}`] ? role.avatar : fallback)].map(loadTexture));
+    ["bubble-wait.png", "bubble-error.png", ...roles.map((role) => avatarFile(role.avatar))].map(loadTexture));
   return roles.map((role, i) => new GeneralSprite(role, sliceFrames(sheets[i]), { wait, error }, i));
 }
 

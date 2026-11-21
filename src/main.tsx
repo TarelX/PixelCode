@@ -4,6 +4,7 @@ import App from "./app/App";
 import "./styles/palette.css";
 import "./styles/pixels.css";
 import "./styles/pixel-ui.css";
+import "./styles/role-card.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

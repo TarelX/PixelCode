@@ -57,6 +57,12 @@ pub enum RoleSource {
     Custom,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SkillInfo {
+    id: &'static str,
+    summary: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Loadout {
     cli: String,
@@ -91,6 +97,21 @@ fn presets() -> Result<Vec<RoleConfig>, String> {
         .iter()
         .map(|text| {
             serde_yaml::from_str(text).map_err(|error| format!("无法读取预设角色：{error}"))
+        })
+        .collect()
+}
+
+fn skills() -> Vec<SkillInfo> {
+    SKILLS
+        .iter()
+        .map(|(id, text)| SkillInfo {
+            id,
+            summary: text
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty() && !line.starts_with('#'))
+                .unwrap_or_default()
+                .to_string(),
         })
         .collect()
 }
@@ -247,6 +268,11 @@ pub fn list_roles(
 }
 
 #[tauri::command]
+pub fn list_skills() -> Vec<SkillInfo> {
+    skills()
+}
+
+#[tauri::command]
 pub fn save_role(
     connection: tauri::State<'_, Mutex<Connection>>,
     role: RoleConfig,
@@ -289,6 +315,15 @@ mod tests {
         for role in &roles {
             validate(role).unwrap();
         }
+    }
+
+    #[test]
+    fn lists_builtin_skills_with_summaries() {
+        let skills = skills();
+        assert_eq!(skills.len(), SKILLS.len());
+        let test = skills.iter().find(|s| s.id == "test-writing").unwrap();
+        assert_eq!(test.summary, "测试编写规范");
+        assert!(skills.iter().all(|s| !s.summary.is_empty()));
     }
 
     #[test]

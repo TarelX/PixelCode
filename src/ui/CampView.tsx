@@ -1,19 +1,48 @@
-import { useEffect, useRef, useState } from "react";
-import { Application, TextureStyle } from "pixi.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Application, Container, Graphics, TextureStyle } from "pixi.js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "../app/store";
 import { zh } from "../i18n/zh";
 import { drawCamp, loadCampLayout } from "../camp/tilemap";
-import { loadGenerals, placeGenerals } from "../camp/sprites";
-import { useRoster } from "../camp/roster";
+import { loadGenerals, placeGenerals, type GeneralSprite } from "../camp/sprites";
+import { useRoster, type RoleConfig } from "../camp/roster";
+import { PixelDialog } from "./PixelDialog";
+import { RoleCard } from "./RoleCard";
+import { RoleRoster } from "./RoleRoster";
 import theme from "../../themes/three-kingdoms/ui.json";
+
+function drawMarker(color: string) {
+  return new Graphics()
+    .rect(-7, 1, 14, 1).rect(-7, -1, 1, 2).rect(6, -1, 1, 2)
+    .rect(-1, -31, 3, 1).rect(0, -30, 1, 1)
+    .fill(color);
+}
 
 export function CampView() {
   const camp = useAppStore((s) => s.camp);
   const loadRoles = useRoster((s) => s.load);
+  const roles = useRoster((s) => s.roles);
+  const selectedId = useRoster((s) => s.selectedId);
+  const select = useRoster((s) => s.select);
   const roleError = useRoster((s) => s.error);
   const hostRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<Container | null>(null);
+  const generalsRef = useRef<{ generals: GeneralSprite[]; marker: Graphics } | null>(null);
+  const [stageVersion, setStageVersion] = useState(0);
+  const [generalsVersion, setGeneralsVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [card, setCard] = useState<{ role: RoleConfig | null } | null>(null);
+
+  const openCard = useCallback((role: RoleConfig | null) => {
+    if (role) select(role.id);
+    setCard({ role });
+  }, [select]);
+  const openCardRef = useRef(openCard);
+  openCardRef.current = openCard;
+
+  useEffect(() => {
+    loadRoles(camp?.id ?? null).catch(() => undefined);
+  }, [camp?.id, loadRoles]);
 
   useEffect(() => {
     setError(null);
@@ -64,20 +93,8 @@ export function CampView() {
         host.appendChild(app.canvas);
         ready = true;
         resize();
-        const roles = await loadRoles(camp?.id ?? null);
-        if (cancelled) return;
-        const generals = await loadGenerals(roles);
-        if (cancelled) {
-          for (const general of generals) general.destroy({ children: true });
-          return;
-        }
-        const stations = Object.fromEntries(layout.zones
-          .filter((zone) => zone.role)
-          .map((zone) => [zone.role!, {
-            x: (zone.x + zone.w / 2) * layout.tileSize,
-            y: (zone.y + zone.h) * layout.tileSize,
-          }]));
-        placeGenerals(app.stage, generals, stations);
+        stageRef.current = app.stage;
+        setStageVersion((version) => version + 1);
       } catch (reason) {
         if (!cancelled) {
           if (app.renderer) app.destroy(true, { children: true });
@@ -91,17 +108,77 @@ export function CampView() {
     return () => {
       cancelled = true;
       observer.disconnect();
+      stageRef.current = null;
       if (ready) app.destroy(true, { children: true });
       ready = false;
     };
-  }, [camp?.id, loadRoles]);
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || roles.length === 0) return;
+    const layout = loadCampLayout();
+    const layer = new Container();
+    let cancelled = false;
+    loadGenerals(roles).then((generals) => {
+      if (cancelled) {
+        for (const general of generals) general.destroy({ children: true });
+        return;
+      }
+      const stations = Object.fromEntries(layout.zones
+        .filter((zone) => zone.role)
+        .map((zone) => [zone.role!, {
+          x: (zone.x + zone.w / 2) * layout.tileSize,
+          y: (zone.y + zone.h) * layout.tileSize,
+        }]));
+      for (const general of generals) {
+        general.eventMode = "static";
+        general.cursor = "pointer";
+        general.on("pointertap", () => openCardRef.current(general.role));
+      }
+      const accent = getComputedStyle(document.documentElement).getPropertyValue("--ui-accent").trim() || "#da795c";
+      const marker = drawMarker(accent);
+      marker.visible = false;
+      layer.addChild(marker);
+      placeGenerals(layer, generals, stations);
+      stage.addChild(layer);
+      generalsRef.current = { generals, marker };
+      setGeneralsVersion((version) => version + 1);
+    }).catch((reason) => {
+      if (!cancelled) setError(`无法显示名将：${String(reason)}`);
+    });
+    return () => {
+      cancelled = true;
+      generalsRef.current = null;
+      if (!layer.destroyed) layer.destroy({ children: true });
+    };
+  }, [roles, stageVersion]);
+
+  useEffect(() => {
+    const current = generalsRef.current;
+    if (!current) return;
+    const general = current.generals.find((g) => g.role.id === selectedId);
+    current.marker.visible = Boolean(general);
+    if (general) current.marker.position.copyFrom(general.position);
+  }, [selectedId, generalsVersion]);
 
   return (
     <section className="screen camp-screen">
       <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || zh.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span></div>
       {(roleError || error) && <p role="alert">{roleError || error}</p>}
-      <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef} /></div>
+      <div className="camp-body">
+        <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef} /></div>
+        <RoleRoster onOpen={openCard} />
+      </div>
       <p className="camp-caption">{theme.campMapHint}</p>
+      <PixelDialog
+        open={card !== null}
+        title={card?.role ? `${theme.roleCardTitle} · ${card.role.name}` : theme.newRoleCardTitle}
+        closeLabel={zh.closeRoleCard}
+        onClose={() => setCard(null)}
+      >
+        {card && <RoleCard key={card.role?.id ?? "new"} role={card.role} onDone={() => setCard(null)} />}
+      </PixelDialog>
     </section>
   );
 }

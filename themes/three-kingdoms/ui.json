@@ -1,7 +1,10 @@
 {
   "brandTagline": "像素之间，大有可为",
   "welcomeEyebrow": "YOUR NEXT CAMPAIGN STARTS HERE",
-  "welcomeTitle": ["一方天地，", "一队名将。"],
+  "welcomeTitle": [
+    "一方天地，",
+    "一队名将。"
+  ],
   "welcomeDescription": "打开一个项目，让你的像素团队在此集结。",
   "openHint": "选择本地文件夹，开启你的大营",
   "emptyHint": "你的下一个作品，从一个文件夹开始。",
@@ -14,5 +17,12 @@
   "campDescription": "名将已在各自驻地集结。",
   "campLegend": "驻地待命",
   "campMapLabel": "军营全景",
-  "campMapHint": "原创像素军营 · 本地项目工作空间"
+  "campMapHint": "原创像素军营 · 本地项目工作空间",
+  "rosterLabel": "GENERALS",
+  "rosterTitle": "名册",
+  "rosterHint": "点选名将，查看与编辑名将卡",
+  "newGeneral": "招募新名将",
+  "roleCardTitle": "名将卡",
+  "newRoleCardTitle": "招募新名将",
+  "newRoleIntro": "为新名将定下名号、人设与武器，保存后即在大营驻扎。"
 }
