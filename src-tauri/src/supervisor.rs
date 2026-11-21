@@ -203,14 +203,14 @@ pub(crate) enum RunUpdate {
 }
 
 #[derive(Clone, Serialize)]
-struct RoleRunEvent<'a> {
-    run_id: u64,
-    task_id: &'a str,
-    artifact: Option<artifacts::Artifact>,
-    camp_id: &'a str,
-    role_id: &'a str,
+pub(crate) struct RoleRunEvent<'a> {
+    pub(crate) run_id: u64,
+    pub(crate) task_id: &'a str,
+    pub(crate) artifact: Option<artifacts::Artifact>,
+    pub(crate) camp_id: &'a str,
+    pub(crate) role_id: &'a str,
     #[serde(flatten)]
-    update: RunUpdate,
+    pub(crate) update: RunUpdate,
 }
 
 #[tauri::command]

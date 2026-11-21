@@ -10,6 +10,7 @@ import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
 import { RoleRoster } from "./RoleRoster";
 import { TaskPanel } from "./TaskPanel";
+import { CouncilPanel } from "./CouncilPanel";
 import { TaskBoard } from "./TaskBoard";
 import { BattleReportButton } from "./BattleReportButton";
 import { PixelButton } from "./components/PixelButton";
@@ -230,7 +231,8 @@ export function CampView() {
         </div></div>
         <RoleRoster onOpen={openCard} />
       </div>
-      {camp && <TaskPanel key={camp.id} campId={camp.id} ready={listening} />}
+      {camp && <TaskPanel key={`task-${camp.id}`} campId={camp.id} ready={listening} />}
+      {camp && <CouncilPanel key={`council-${camp.id}`} campId={camp.id} ready={listening} onPlan={() => setWallOpen(true)} />}
       {camp && <div><PixelButton onClick={() => setWallOpen(true)}>{theme.wall.title}</PixelButton></div>}
       <PixelDialog open={wallOpen} title={theme.wall.title} closeLabel={theme.wall.close} onClose={() => setWallOpen(false)}>
         {wallOpen && camp && <TaskBoard key={camp.id} campId={camp.id} />}

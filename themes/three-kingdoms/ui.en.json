@@ -1,4 +1,9 @@
 {
+  "council": {
+    "title": "Council · Conversation mode", "participants": "Council participants", "hint": "Choose 2–4 generals for two rounds of discussion. The captain will then prepare a draft plan. Discussions are read-only and do not modify files.",
+    "request": "Council topic", "placeholder": "Describe your request for the council…", "start": "Convene council", "running": "Council in session…", "stop": "Stop council",
+    "transcript": "Council transcript", "round": "Round {round}", "saved": "The council has concluded. A draft plan is on the Task Wall, awaiting your approval.", "openWall": "Open Task Wall", "stopped": "The council was stopped. No draft plan was created."
+  },
   "appName": "PixelCode",
   "titleRecruit": "Recruit Generals",
   "recentCamps": "Recent camps",
