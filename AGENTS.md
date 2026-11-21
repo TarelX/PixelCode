@@ -10,6 +10,7 @@
 pnpm install
 pnpm typecheck
 pnpm build
+pnpm test
 pnpm tauri dev          # 打开 GUI，自动化环境不要跑
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -18,8 +19,9 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ## 提交前必须全部通过（与 CI 一致）
 1. `pnpm typecheck`
 2. `pnpm build`
-3. `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
-4. `cargo test --manifest-path src-tauri/Cargo.toml`
+3. `pnpm test`
+4. `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings`
+5. `cargo test --manifest-path src-tauri/Cargo.toml`
 
 任何一项失败不得提交、不得开 PR。
 
