@@ -1,0 +1,25 @@
+.pixel-dialog:has(.strategy-wall), .pixel-dialog:has(.wall-empty) { width: 960px; }
+.strategy-wall > header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.strategy-wall > header > strong { color: var(--ui-warning); font-size: 12px; }
+.strategy-wall > header > p { width: 100%; margin: 0 0 20px; white-space: pre-wrap; }
+.wall-empty { padding: 32px; color: var(--ui-muted); text-align: center; }
+.wall-scroll { overflow: auto; border: 1px solid var(--ui-border); background: var(--ui-sidebar); }
+.wall-graph { position: relative; }
+.wall-graph svg { position: absolute; inset: 0; }
+.wall-graph path { stroke: var(--ui-muted); stroke-width: 2; fill: none; }
+.strategy-card { position: absolute; width: 240px; height: 128px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 16px; border: 2px solid var(--ui-border); border-radius: 0; background: var(--ui-raised); color: var(--text-light); text-align: left; cursor: pointer; box-shadow: 4px 4px 0 var(--outline); }
+.strategy-card:hover, .strategy-card:focus-visible { border-color: var(--ui-accent); }
+.strategy-card strong { font-size: 13px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.strategy-card > span { color: var(--ui-muted); font-size: 12px; }
+.task-status { margin-top: auto; border-left: 4px solid currentColor; padding-left: 6px; font-size: 11px; }
+.task-status--pending { color: var(--ui-muted); }
+.task-status--running { color: var(--state-busy); }
+.task-status--checking { color: var(--ui-success); }
+.task-status--reviewing { color: var(--ui-link); }
+.task-status--done { color: var(--state-done); }
+.task-status--blocked { color: var(--ui-warning); }
+.task-status--failed { color: var(--ui-error); }
+.task-detail dl { margin: 0; }
+.task-detail dl > div { margin-bottom: 20px; }
+.task-detail dt, .task-detail h3 { color: var(--ui-muted); font-size: 11px; margin: 0 0 8px; }
+.task-detail dd { margin: 0; white-space: pre-wrap; line-height: 1.7; }
