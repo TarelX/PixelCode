@@ -1,7 +1,10 @@
 .pixel-dialog:has(.strategy-wall), .pixel-dialog:has(.wall-empty) { width: 960px; }
 .strategy-wall > header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .strategy-wall > header > strong { color: var(--ui-warning); font-size: 12px; }
-.strategy-wall > header > p { width: 100%; margin: 0 0 20px; white-space: pre-wrap; }
+.strategy-wall > header > p { width: 100%; margin: 0; white-space: pre-wrap; }
+.wall-recruits { width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 20px; font-size: 12px; }
+.wall-recruits > span { border: 1px solid var(--ui-border); padding: 4px 8px; background: var(--ui-raised); }
+.wall-recruits > span:first-child { border: 0; padding: 0; background: none; color: var(--ui-muted); }
 .wall-empty { padding: 32px; color: var(--ui-muted); text-align: center; }
 .wall-scroll { overflow: auto; border: 1px solid var(--ui-border); background: var(--ui-sidebar); }
 .wall-graph { position: relative; }

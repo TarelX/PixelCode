@@ -1,0 +1,9 @@
+id: new-project
+name: 新项目
+fits: 从零做系统（需求不清时先向用户澄清）
+steps:
+  - { step: 架构, role_type: architect, output: architecture.md }
+  - { step: 设计, role_type: designer, output: design.md }
+  - { step: 前端, role_type: frontend, output: frontend.md }
+  - { step: 后端, role_type: backend, output: backend.md }
+  - { step: 测试, role_type: debugger, output: test-report.md }

@@ -1,0 +1,7 @@
+id: research
+name: 调研
+fits: 不改代码，只产出结论（如整理文档、会议记录、资料分析）
+steps:
+  - { step: 收集, role_type: architect, output: sources.md }
+  - { step: 分析, role_type: architect, output: analysis.md }
+  - { step: 报告, role_type: captain, output: report.md }

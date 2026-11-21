@@ -1,0 +1,7 @@
+id: bug-fix
+name: 修 bug
+fits: 有缺陷要修
+steps:
+  - { step: 复现, role_type: debugger, output: repro.md }
+  - { step: 修复, role_type: backend, output: fix.md }
+  - { step: 审查, role_type: reviewer, output: review.md }

@@ -98,6 +98,13 @@ Bash deny 规则，改由沙箱约束网络与写入范围；这不等于禁止�
 界面布局参考 [MonoCode](https://www.usemono.dev/) 的清晰分区与
 [Godly](https://godly.website/) 的留白和信息层级；未复制任何第三方代码或素材。
 
+## 队长动态编排（阶段 D · 任务 1）
+
+队长拟定草案时会收到 `flows/*.yaml` 的四个内置参考流程（修 bug、新项目、重构、调研，规格 §7.3），
+可套用、裁剪、组合或不用；非编码请求（如整理会议记录）可只招募所需名将并产出 Markdown 报告。
+草案的输入产物须是其前置锦囊的首个输出产物；调度器在每个锦囊后检查产出非空，
+空产出按检查失败返工（最多 3 次）。锦囊墙显示任务类型与本次招募的名将。
+
 ## English
 
 PixelCode is a local desktop app that turns your already-installed coding agent CLIs (Claude Code, Codex) into a pixel-art team of Three Kingdoms generals, working in a pixel-art military camp. It does not sell tokens, ship models, or touch your API keys. See [docs/PIXELCODE_SPEC.md](docs/PIXELCODE_SPEC.md) (Chinese). Status: early skeleton.
