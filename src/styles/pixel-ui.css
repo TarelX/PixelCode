@@ -11,6 +11,12 @@
   overflow: auto;
 }
 
+.pixel-shell__camp {
+  height: 100%;
+  /* Leave room for the camp headings and a 1× map in short windows. */
+  min-height: 28rem;
+}
+
 .title-screen {
   box-sizing: border-box;
   height: auto;

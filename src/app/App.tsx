@@ -22,7 +22,11 @@ export default function App() {
         </PixelButton>
       </TopBar>
       <div className="pixel-shell__content">
-        {screen === "title" ? <TitleScreen /> : <CampView />}
+        {screen === "title" ? <TitleScreen /> : (
+          <div className="pixel-shell__camp">
+            <CampView />
+          </div>
+        )}
         <CliStatus />
       </div>
       <PixelDialog
