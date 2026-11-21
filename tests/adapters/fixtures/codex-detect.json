@@ -1,0 +1,8 @@
+[
+  {"success": true, "stdout": "", "stderr": "Logged in using ChatGPT\n", "status": "found", "error": false},
+  {"success": true, "stdout": "Logged in using an API key\n", "stderr": "", "status": "found", "error": false},
+  {"success": false, "stdout": "", "stderr": "Not logged in\n", "status": "found_needs_login", "error": false},
+  {"success": true, "stdout": "", "stderr": "", "status": "found_needs_login", "error": true},
+  {"success": false, "stdout": "", "stderr": "configuration error", "status": "found_needs_login", "error": true},
+  {"success": false, "stdout": "Logged in using ChatGPT", "stderr": "", "status": "found_needs_login", "error": true}
+]
