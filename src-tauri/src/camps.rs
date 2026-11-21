@@ -144,8 +144,8 @@ mod tests {
         }
         let recent = recent_camps(&connection).unwrap();
         assert_eq!(recent.len(), 5);
-        assert!(recent[0].root_path.ends_with("/5"));
-        assert!(recent[4].root_path.ends_with("/1"));
+        assert!(Path::new(&recent[0].root_path).ends_with("5"));
+        assert!(Path::new(&recent[4].root_path).ends_with("1"));
         let reopened = save_camp(&connection, &fixture.0.join(".")).unwrap();
         assert_eq!(reopened.id, first.id);
         assert_eq!(reopened.created_at, first.created_at);
