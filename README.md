@@ -41,6 +41,16 @@ fixture 中已登录输出为合成样本，未登录格式已在本机验证。
 新建任务目前仍为空占位；规格要求的无可用 CLI 时拦截任务应在实现新建任务时接入，
 不得仅凭 `version` 或有 `error` 的结果放行。
 
+## 名将占位精灵（阶段 A · 任务 5）
+
+`assets/sprites/` 下 7 名将精灵均为本仓库原创像素画（随仓库 MIT 授权），由
+`python3 tools/sprites/generate.py` 从脚本内的像素字符图生成，改图请改脚本后重新生成。
+每张图 4 帧 16×24：待机呼吸 ×2、行走 ×2；另有等待（黄"！"）与出错（红"！"）气泡。
+
+`src/camp/roster.ts` 按 `roles/*.yaml` 读取名将，`avatar` 字段对应精灵文件名；
+`src/camp/sprites.ts` 的 `loadGenerals()` 生成 `GeneralSprite`（脚底锚点、最近邻），
+`placeGenerals()` 按角色 id 放到驻地坐标；状态到动画的映射在 `src/camp/animations.ts`（规格 §5.2）。
+
 ## English
 
 PixelCode is a local desktop app that turns your already-installed coding agent CLIs (Claude Code, Codex) into a pixel-art team of Three Kingdoms generals, working in a pixel-art military camp. It does not sell tokens, ship models, or touch your API keys. See [docs/PIXELCODE_SPEC.md](docs/PIXELCODE_SPEC.md) (Chinese). Status: early skeleton.
