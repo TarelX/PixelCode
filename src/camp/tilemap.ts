@@ -1,4 +1,5 @@
 import { Assets, Container, Graphics, Sprite, type Texture } from "pixi.js";
+import { MissingAssetError } from "./asset-error";
 import camp from "../../themes/three-kingdoms/camp.json";
 
 export interface CampZone {
@@ -30,7 +31,7 @@ export async function drawCamp(layout: CampLayout): Promise<Container> {
   const container = new Container();
   if (layout.background) {
     const url = scenery[`/themes/three-kingdoms/tiles/${layout.background}`];
-    if (!url) throw new Error(`缺少军营素材：${layout.background}`);
+    if (!url) throw new MissingAssetError(layout.background);
     const texture = await Assets.load<Texture>(url);
     texture.source.scaleMode = "nearest";
     container.addChild(new Sprite(texture));

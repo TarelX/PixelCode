@@ -7,9 +7,11 @@ import { useRuns } from "../camp/run";
 import type { StoredPlan } from "./plan-layout";
 import { reportDay, renderBattleReport } from "./battle-report";
 import { PixelButton } from "./components/PixelButton";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n } from "../i18n";
 
 export function BattleReportButton({ camp, snapshot }: { camp: Camp; snapshot: () => HTMLCanvasElement | undefined }) {
+  const localeCopy = useI18n();
+  const { theme } = localeCopy;
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -23,15 +25,15 @@ export function BattleReportButton({ camp, snapshot }: { camp: Camp; snapshot: (
         invoke<StoredPlan | null>("latest_plan", { campId: camp.id }),
         invoke<Record<string, number>>("battle_report_counts", { campId: camp.id, start: day.start, end: day.end }),
       ]);
-      const blob = await renderBattleReport({ camp, date: day.date, plan, counts, roles: useRoster.getState().roles, runs: useRuns.getState().runs, snapshot: snapshot() });
+      const blob = await renderBattleReport({ camp, date: day.date, plan, counts, roles: useRoster.getState().roles, runs: useRuns.getState().runs, snapshot: snapshot() }, localeCopy);
       await invoke("export_battle_report", { path, bytes: Array.from(new Uint8Array(await blob.arrayBuffer())) });
-      setMessage(`${theme.report.saved}${path}`);
-    } catch (reason) { setError(`${theme.report.error}${String(reason)}`); }
+      setMessage(path);
+    } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
   }
   return <div className="battle-report-action">
     <PixelButton disabled={busy} onClick={() => void exportReport()}>{busy ? theme.report.busy : theme.report.export}</PixelButton>
-    {message && <p role="status">{message}</p>}
-    {error && <p role="alert">{error}</p>}
+    {message && <p role="status">{theme.report.saved}{message}</p>}
+    {error && <p role="alert">{theme.report.error}{error}</p>}
   </div>;
 }

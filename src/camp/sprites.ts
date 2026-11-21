@@ -1,4 +1,5 @@
 import { AnimatedSprite, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
+import { MissingAssetError } from "./asset-error";
 import { clipFrames, clipSpeed, stateAnimations, type Bubble, type GeneralState } from "./animations";
 import type { RoleConfig } from "./roster";
 
@@ -21,7 +22,7 @@ export function avatarUrl(avatar: string | null): string {
 
 async function loadTexture(file: string): Promise<Texture> {
   const url = spriteFiles[`/assets/sprites/${file}`];
-  if (!url) throw new Error(`缺少像素素材：assets/sprites/${file}`);
+  if (!url) throw new MissingAssetError(`assets/sprites/${file}`);
   const texture = await Assets.load<Texture>(url);
   texture.source.scaleMode = "nearest";
   return texture;

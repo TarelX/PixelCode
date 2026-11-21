@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRoster } from "../camp/roster";
 import { useRuns } from "../camp/run";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n, roleName } from "../i18n";
 import "../styles/council.css";
 
 interface ConversationEvent {
@@ -16,9 +16,10 @@ interface ConversationEvent {
   outcome: "plan_saved" | "failed" | "stopped" | null;
   message: string | null;
 }
-const copy = theme.council;
 
 export function CouncilPanel({ campId, ready, onPlan }: { campId: string; ready: boolean; onPlan: () => void }) {
+  const { locale, theme } = useI18n();
+  const copy = theme.council;
   const roles = useRoster((s) => s.roles);
   const otherBusy = useRuns((s) => s.busy);
   const [selected, setSelected] = useState<string[]>([]);
@@ -58,7 +59,7 @@ export function CouncilPanel({ campId, ready, onPlan }: { campId: string; ready:
     <div className="council-roles" role="group" aria-label={copy.participants}>
       {roles.map((role) => <button key={role.id} type="button" aria-pressed={chosen.includes(role.id)}
         disabled={running || otherBusy || (!chosen.includes(role.id) && chosen.length >= 4)}
-        onClick={() => setSelected(chosen.includes(role.id) ? chosen.filter((id) => id !== role.id) : [...chosen, role.id])}>{role.name}</button>)}
+        onClick={() => setSelected(chosen.includes(role.id) ? chosen.filter((id) => id !== role.id) : [...chosen, role.id])}>{roleName(role, locale)}</button>)}
     </div>
     <p className="council-hint">{copy.hint}</p>
     <label htmlFor="council-request">{copy.request}</label>
@@ -68,7 +69,10 @@ export function CouncilPanel({ campId, ready, onPlan }: { campId: string; ready:
       {running && <button onClick={() => void stop()}>{copy.stop}</button>}
     </div>
     <ol className="council-transcript" aria-label={copy.transcript} aria-live="polite">
-      {turns.map((turn, index) => <li key={index}><strong>{turn.name} · {copy.round.replace("{round}", String(turn.round))}</strong><p>{turn.text}</p></li>)}
+      {turns.map((turn, index) => {
+        const speaker = roles.find((role) => role.id === turn.role_id);
+        return <li key={index}><strong>{speaker ? roleName(speaker, locale) : turn.name} · {copy.round.replace("{round}", String(turn.round))}</strong><p>{turn.text}</p></li>;
+      })}
     </ol>
     {outcome === "plan_saved" && <p role="status">{copy.saved} <button onClick={onPlan}>{copy.openWall}</button></p>}
     {outcome === "stopped" && <p role="status">{copy.stopped}</p>}

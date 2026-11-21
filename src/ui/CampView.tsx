@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Application, Container, Graphics, TextureStyle } from "pixi.js";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { MissingAssetError } from "../camp/asset-error";
 import { useAppStore } from "../app/store";
-import { zh } from "../i18n/zh";
 import { drawCamp, loadCampLayout } from "../camp/tilemap";
 import { loadGenerals, placeGenerals, type GeneralSprite } from "../camp/sprites";
 import { useRoster, type RoleConfig } from "../camp/roster";
@@ -17,7 +17,7 @@ import { PixelButton } from "./components/PixelButton";
 import { RunBubble } from "./RunBubble";
 import { listenToRuns, useRuns } from "../camp/run";
 import type { BubbleAnchor } from "../camp/bubble";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n, roleName } from "../i18n";
 
 function drawMarker(color: string) {
   return new Graphics()
@@ -27,6 +27,7 @@ function drawMarker(color: string) {
 }
 
 export function CampView() {
+  const { locale, theme } = useI18n();
   const camp = useAppStore((s) => s.camp);
   const loadRoles = useRoster((s) => s.load);
   const roles = useRoster((s) => s.roles);
@@ -39,7 +40,7 @@ export function CampView() {
   const generalsRef = useRef<{ generals: GeneralSprite[]; marker: Graphics } | null>(null);
   const [stageVersion, setStageVersion] = useState(0);
   const [generalsVersion, setGeneralsVersion] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<["campError" | "generalsError", unknown] | null>(null);
   const [card, setCard] = useState<{ role: RoleConfig | null } | null>(null);
   const [wallOpen, setWallOpen] = useState(false);
   const runs = useRuns((s) => s.runs);
@@ -50,8 +51,8 @@ export function CampView() {
     if (!camp) return;
     let cancelled = false;
     const subscription = listenToRuns(camp.id);
-    subscription.then(() => { if (!cancelled) setListening(true); }).catch((reason) => setError(String(reason)));
-    return () => { cancelled = true; setListening(false); void subscription.then((unlisten) => unlisten()); };
+    subscription.then(() => { if (!cancelled) setListening(true); }).catch((reason) => { if (!cancelled) setError(["campError", reason]); });
+    return () => { cancelled = true; setListening(false); void subscription.then((unlisten) => unlisten(), () => {}); };
   }, [camp?.id]);
 
   useEffect(() => {
@@ -153,7 +154,7 @@ export function CampView() {
           if (app.renderer) app.destroy(true, { children: true });
           else app.stage.destroy({ children: true });
           ready = false;
-          setError(`无法显示军营：${String(reason)}`);
+          setError(["campError", reason]);
         }
       }
     }
@@ -199,7 +200,7 @@ export function CampView() {
       generalsRef.current = { generals, marker };
       setGeneralsVersion((version) => version + 1);
     }).catch((reason) => {
-      if (!cancelled) setError(`无法显示名将：${String(reason)}`);
+      if (!cancelled) setError(["generalsError", reason]);
     });
     return () => {
       cancelled = true;
@@ -218,11 +219,12 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
-      <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || zh.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><div className="camp-heading-actions">
+      <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || theme.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><div className="camp-heading-actions">
         <span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span>
         {camp && <BattleReportButton key={camp.id} camp={camp} snapshot={() => appRef.current?.renderer.extract.canvas({ target: appRef.current.stage }) as HTMLCanvasElement | undefined} />}
       </div></div>
-      {(roleError || error) && <p role="alert">{roleError || error}</p>}
+      {(roleError || error) && <p role="alert">{roleError ? theme.rosterError + roleError
+        : error && theme[error[0]] + (error[1] instanceof MissingAssetError ? theme.missingAsset + error[1].message : String(error[1]))}</p>}
       <div className="camp-body">
         <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef}>
           <div className="run-overlay">{Object.entries(runs).map(([id, run]) => anchors[id] && <RunBubble key={id} id={id} run={run} anchor={anchors[id]} />)}</div>
@@ -238,8 +240,8 @@ export function CampView() {
       <p className="camp-caption">{theme.campMapHint}</p>
       <PixelDialog
         open={card !== null}
-        title={card?.role ? `${theme.roleCardTitle} · ${card.role.name}` : theme.newRoleCardTitle}
-        closeLabel={zh.closeRoleCard}
+        title={card?.role ? `${theme.roleCardTitle} · ${roleName(card.role, locale)}` : theme.newRoleCardTitle}
+        closeLabel={theme.closeRoleCard}
         onClose={() => setCard(null)}
       >
         {card && <RoleCard key={card.role?.id ?? "new"} role={card.role} onDone={() => setCard(null)} />}

@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { useRuns, type RoleRun } from "../camp/run";
 import { bubblePosition, type BubbleAnchor } from "../camp/bubble";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n } from "../i18n";
 import { readArtifact } from "../orchestrator/artifact-manager";
 import { PixelDialog } from "./PixelDialog";
 
 export function RunBubble({ id, run, anchor }: { id: string; run: RoleRun; anchor: BubbleAnchor }) {
+  const { theme } = useI18n();
   const text = useRef<HTMLPreElement>(null);
   const bubble = useRef<HTMLElement>(null);
   const [height, setHeight] = useState(0);
