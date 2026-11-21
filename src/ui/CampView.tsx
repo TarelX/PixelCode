@@ -10,6 +10,8 @@ import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
 import { RoleRoster } from "./RoleRoster";
 import { TaskPanel } from "./TaskPanel";
+import { TaskBoard } from "./TaskBoard";
+import { PixelButton } from "./components/PixelButton";
 import { RunBubble } from "./RunBubble";
 import { listenToRuns, useRuns } from "../camp/run";
 import type { BubbleAnchor } from "../camp/bubble";
@@ -36,6 +38,7 @@ export function CampView() {
   const [generalsVersion, setGeneralsVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<{ role: RoleConfig | null } | null>(null);
+  const [wallOpen, setWallOpen] = useState(false);
   const runs = useRuns((s) => s.runs);
   const [listening, setListening] = useState(false);
   const [anchors, setAnchors] = useState<Record<string, BubbleAnchor>>({});
@@ -219,6 +222,10 @@ export function CampView() {
         <RoleRoster onOpen={openCard} />
       </div>
       {camp && <TaskPanel key={camp.id} campId={camp.id} ready={listening} />}
+      {camp && <div><PixelButton onClick={() => setWallOpen(true)}>{theme.wall.title}</PixelButton></div>}
+      <PixelDialog open={wallOpen} title={theme.wall.title} closeLabel={theme.wall.close} onClose={() => setWallOpen(false)}>
+        {wallOpen && camp && <TaskBoard key={camp.id} campId={camp.id} />}
+      </PixelDialog>
       <p className="camp-caption">{theme.campMapHint}</p>
       <PixelDialog
         open={card !== null}
