@@ -75,6 +75,17 @@ pub struct Permissions {
     pub(crate) deny: Vec<String>,
 }
 
+impl Permissions {
+    pub(crate) fn clamp_read_only(&mut self) {
+        self.allow.retain(|rule| read_only_tool(rule));
+        for tool in READ_ONLY_DENY {
+            if !self.deny.iter().any(|rule| rule == tool) {
+                self.deny.push((*tool).into());
+            }
+        }
+    }
+}
+
 const READ_ONLY_TOOLS: &[&str] = &["Read", "Grep", "Glob"];
 const READ_ONLY_DENY: &[&str] = &["Write", "Edit", "Bash", "NotebookEdit"];
 
@@ -93,9 +104,9 @@ pub(crate) struct RunConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoleConfig {
-    id: String,
-    role_type: String,
-    name: String,
+    pub(crate) id: String,
+    pub(crate) role_type: String,
+    pub(crate) name: String,
     name_en: Option<String>,
     title: Option<String>,
     avatar: Option<String>,
@@ -184,7 +195,7 @@ fn json<T: Serialize>(value: &T) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| format!("无法编码角色配置：{error}"))
 }
 
-fn effective_roles(
+pub(crate) fn effective_roles(
     connection: &Connection,
     camp_id: Option<&str>,
 ) -> Result<Vec<RoleConfig>, String> {
@@ -260,12 +271,7 @@ pub(crate) fn run_config(
         .get(loadout_index)
         .ok_or("未找到角色的武器槽")?;
     if matches!(role.role_type.as_str(), "captain" | "reviewer") {
-        role.permissions.allow.retain(|rule| read_only_tool(rule));
-        for tool in READ_ONLY_DENY {
-            if !role.permissions.deny.iter().any(|rule| rule == tool) {
-                role.permissions.deny.push((*tool).into());
-            }
-        }
+        role.permissions.clamp_read_only();
     }
     let artifact_name = match role.role_type.as_str() {
         "captain" => "plan.json",

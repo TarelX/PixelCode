@@ -1,4 +1,9 @@
 {
+  "council": {
+    "title": "军议 · 对话协同", "participants": "参议名将", "hint": "请选择二至四名名将，各议两轮，再由队长汇成锦囊草案。军议只读，不会修改文件。",
+    "request": "军议议题", "placeholder": "说说你的需求，请诸将共议…", "start": "召开军议", "running": "军议进行中…", "stop": "停止军议",
+    "transcript": "军议记录", "round": "第 {round} 轮", "saved": "军议已成，计划草案已送至锦囊墙，待主公点将。", "openWall": "打开锦囊墙", "stopped": "军议已停止，未生成草案。"
+  },
   "report": {
     "title": "今日战报", "export": "导出战报", "busy": "正在绘制…",
     "saved": "战报已保存：", "error": "无法导出战报：", "canvasError": "无法创建战报画布", "pngError": "无法生成 PNG 图片",

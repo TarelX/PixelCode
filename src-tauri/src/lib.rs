@@ -2,6 +2,7 @@ mod adapters;
 mod artifacts;
 mod battle_report;
 mod camps;
+mod conversation;
 mod db;
 mod git;
 mod plans;
@@ -28,6 +29,7 @@ pub fn run() {
             roles::save_role,
             roles::delete_role,
             supervisor::start_role_run,
+            conversation::start_conversation,
             scheduler::approve_plan_execution,
             artifacts::read_artifact,
             artifacts::list_artifacts,
