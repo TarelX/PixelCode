@@ -1,4 +1,16 @@
 {
+  "taskTitle": "分派任务",
+  "taskSelect": "请先点选一位名将",
+  "taskLoadout": "武器配置",
+  "taskPrompt": "任务内容",
+  "taskPlaceholder": "描述要完成的任务…",
+  "taskStart": "开始任务",
+  "taskStop": "停止",
+  "taskOutput": "任务输出",
+  "taskDismiss": "收起输出",
+  "taskWaiting": "等待输出…",
+  "taskTool": "工具",
+  "runStates": { "running": "执行中", "completed": "已完成", "failed": "! 执行失败", "stopped": "已停止" },
   "brandTagline": "像素之间，大有可为",
   "welcomeEyebrow": "YOUR NEXT CAMPAIGN STARTS HERE",
   "welcomeTitle": [

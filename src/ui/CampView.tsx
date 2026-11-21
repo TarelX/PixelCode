@@ -9,6 +9,9 @@ import { useRoster, type RoleConfig } from "../camp/roster";
 import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
 import { RoleRoster } from "./RoleRoster";
+import { TaskPanel } from "./TaskPanel";
+import { RunBubble } from "./RunBubble";
+import { listenToRuns, useRuns } from "../camp/run";
 import theme from "../../themes/three-kingdoms/ui.json";
 
 function drawMarker(color: string) {
@@ -32,6 +35,46 @@ export function CampView() {
   const [generalsVersion, setGeneralsVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [card, setCard] = useState<{ role: RoleConfig | null } | null>(null);
+  const runs = useRuns((s) => s.runs);
+  const [listening, setListening] = useState(false);
+  const [anchors, setAnchors] = useState<Record<string, { x: number; y: number }>>({});
+
+  useEffect(() => {
+    if (!camp) return;
+    let cancelled = false;
+    const subscription = listenToRuns(camp.id);
+    subscription.then(() => { if (!cancelled) setListening(true); }).catch((reason) => setError(String(reason)));
+    return () => { cancelled = true; setListening(false); void subscription.then((unlisten) => unlisten()); };
+  }, [camp?.id]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const position = () => {
+      const canvas = host.querySelector("canvas");
+      const stage = stageRef.current;
+      if (!canvas || !stage) return;
+      const bounds = canvas.getBoundingClientRect();
+      const parent = host.getBoundingClientRect();
+      setAnchors(Object.fromEntries((generalsRef.current?.generals ?? []).map((general) => [general.role.id, {
+        x: Math.round(Math.max(114, Math.min(parent.width - 114, bounds.left - parent.left + general.x * stage.scale.x))),
+        y: Math.round(bounds.top - parent.top + (general.y - 26) * stage.scale.y),
+      }])));
+    };
+    const observer = new ResizeObserver(position);
+    observer.observe(host);
+    host.addEventListener("scroll", position);
+    position();
+    return () => { observer.disconnect(); host.removeEventListener("scroll", position); };
+  }, [generalsVersion]);
+
+  useEffect(() => {
+    for (const general of generalsRef.current?.generals ?? []) {
+      const status = runs[general.role.id]?.status;
+      const state = status === "completed" ? "done" : status === "failed" ? "error" : status === "stopped" ? "cancelled" : status ?? "idle";
+      if (general.state !== state) general.setState(state);
+    }
+  }, [runs, generalsVersion]);
 
   const openCard = useCallback((role: RoleConfig | null) => {
     if (role) select(role.id);
@@ -167,9 +210,12 @@ export function CampView() {
       <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || zh.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span></div>
       {(roleError || error) && <p role="alert">{roleError || error}</p>}
       <div className="camp-body">
-        <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef} /></div>
+        <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef}>
+          <div className="run-overlay">{Object.entries(runs).map(([id, run]) => anchors[id] && <RunBubble key={id} id={id} run={run} {...anchors[id]} />)}</div>
+        </div></div>
         <RoleRoster onOpen={openCard} />
       </div>
+      {camp && <TaskPanel campId={camp.id} ready={listening} />}
       <p className="camp-caption">{theme.campMapHint}</p>
       <PixelDialog
         open={card !== null}

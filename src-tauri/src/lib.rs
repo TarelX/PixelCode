@@ -22,7 +22,8 @@ pub fn run() {
             roles::list_skills,
             roles::save_role,
             roles::delete_role,
-            supervisor::start_role_run
+            supervisor::start_role_run,
+            supervisor::stop_role_run
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
