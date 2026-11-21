@@ -7,7 +7,10 @@ use rusqlite::Connection;
 use serde::Serialize;
 use tauri::{Emitter, Manager, WebviewWindow};
 
-use crate::{adapters::claude_code, camps, roles};
+use crate::{
+    adapters::{claude_code, codex},
+    camps, roles,
+};
 
 const ROLE_RUN_EVENT: &str = "role-run";
 static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(1);
@@ -51,13 +54,13 @@ pub async fn start_role_run(
             TryLockError::WouldBlock => "已有角色正在运行",
             TryLockError::Poisoned(_) => "无法访问角色运行状态",
         })?;
-        let (cwd, model, system_prompt, permissions) = {
+        let (cwd, cli, model, system_prompt, permissions) = {
             let state = window.state::<Mutex<Connection>>();
             let connection = state.lock().map_err(|_| "无法访问大营数据库")?;
             let cwd = camps::run_root(&connection, &camp_id)?;
-            let (model, system_prompt, permissions) =
-                roles::claude_config(&connection, &camp_id, &role_id, loadout_index)?;
-            (cwd, model, system_prompt, permissions)
+            let (cli, model, system_prompt, permissions) =
+                roles::run_config(&connection, &camp_id, &role_id, loadout_index)?;
+            (cwd, cli, model, system_prompt, permissions)
         };
         let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
         let emit = |update| {
@@ -74,16 +77,18 @@ pub async fn start_role_run(
                 )
                 .map_err(|error| format!("无法发送角色运行事件：{error}"))
         };
-        let result = claude_code::start(
-            claude_code::StartOptions {
-                cwd: &cwd,
-                model: &model,
-                system_prompt: &system_prompt,
-                prompt: &prompt,
-                permissions: &permissions,
-            },
-            &emit,
-        );
+        let options = claude_code::StartOptions {
+            cwd: &cwd,
+            model: &model,
+            system_prompt: &system_prompt,
+            prompt: &prompt,
+            permissions: &permissions,
+        };
+        let result = match cli.as_str() {
+            "claude-code" => claude_code::start(options, &emit),
+            "codex" => codex::start(options, &emit),
+            _ => Err(format!("不支持的 CLI：{cli}")),
+        };
         match result {
             Ok(()) => emit(RunUpdate::Completed),
             Err(message) => {

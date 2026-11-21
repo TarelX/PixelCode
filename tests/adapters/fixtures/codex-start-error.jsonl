@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"thread-fixture"}
+{"type":"turn.started"}
+{"type":"error","message":"Authentication failed"}
+{"type":"turn.failed","error":{"message":"Not logged in"}}
