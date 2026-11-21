@@ -1,6 +1,6 @@
 import { AnimatedSprite, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
 import { clipFrames, clipSpeed, stateAnimations, type Bubble, type GeneralState } from "./animations";
-import { roster, type RoleConfig } from "./roster";
+import type { RoleConfig } from "./roster";
 
 export const FRAME_WIDTH = 16;
 export const FRAME_HEIGHT = 24;
@@ -52,16 +52,17 @@ export class GeneralSprite extends Container {
   }
 }
 
-export async function loadGenerals(roles: RoleConfig[] = roster): Promise<GeneralSprite[]> {
+export async function loadGenerals(roles: RoleConfig[]): Promise<GeneralSprite[]> {
+  const fallback = Object.keys(spriteFiles).sort().find((path) => !path.includes("/bubble-"))!.split("/").pop()!;
   const [wait, error, ...sheets] = await Promise.all(
-    ["bubble-wait.png", "bubble-error.png", ...roles.map((role) => role.avatar)].map(loadTexture));
+    ["bubble-wait.png", "bubble-error.png", ...roles.map((role) =>
+      role.avatar && spriteFiles[`/assets/sprites/${role.avatar}`] ? role.avatar : fallback)].map(loadTexture));
   return roles.map((role, i) => new GeneralSprite(role, sliceFrames(sheets[i]), { wait, error }, i));
 }
 
 export function placeGenerals(parent: Container, generals: GeneralSprite[], stations: Record<string, { x: number; y: number }>) {
-  for (const general of generals) {
-    const station = stations[general.role.id];
-    if (!station) continue;
+  for (const [index, general] of generals.entries()) {
+    const station = stations[general.role.id] ?? { x: 24 + (index % 18) * 16, y: 144 + (Math.floor(index / 18) % 2) * 24 };
     general.position.set(Math.round(station.x), Math.round(station.y));
     parent.addChild(general);
   }

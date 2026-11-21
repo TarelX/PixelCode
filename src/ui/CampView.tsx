@@ -5,13 +5,17 @@ import { useAppStore } from "../app/store";
 import { zh } from "../i18n/zh";
 import { drawCamp, loadCampLayout } from "../camp/tilemap";
 import { loadGenerals, placeGenerals } from "../camp/sprites";
+import { useRoster } from "../camp/roster";
 
 export function CampView() {
   const camp = useAppStore((s) => s.camp);
+  const loadRoles = useRoster((s) => s.load);
+  const roleError = useRoster((s) => s.error);
   const hostRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     const host = hostRef.current!;
     const layout = loadCampLayout();
     const app = new Application();
@@ -53,7 +57,9 @@ export function CampView() {
         host.appendChild(app.canvas);
         ready = true;
         resize();
-        const generals = await loadGenerals();
+        const roles = await loadRoles(camp?.id ?? null);
+        if (cancelled) return;
+        const generals = await loadGenerals(roles);
         if (cancelled) {
           for (const general of generals) general.destroy({ children: true });
           return;
@@ -70,7 +76,7 @@ export function CampView() {
           if (app.renderer) app.destroy(true, { children: true });
           else app.stage.destroy({ children: true });
           ready = false;
-          setError(`Unable to render camp: ${String(reason)}`);
+          setError(`无法显示军营：${String(reason)}`);
         }
       }
     }
@@ -81,14 +87,14 @@ export function CampView() {
       if (ready) app.destroy(true, { children: true });
       ready = false;
     };
-  }, []);
+  }, [camp?.id, loadRoles]);
 
   return (
     <section className="screen camp-screen">
       <h1>{zh.campTitle}</h1>
       <h2>{camp?.name}</h2>
       <p>{camp?.root_path}</p>
-      {error && <p role="alert">{error}</p>}
+      {(roleError || error) && <p role="alert">{roleError || error}</p>}
       <div className="camp-canvas" ref={hostRef} />
     </section>
   );
