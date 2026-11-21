@@ -19,6 +19,7 @@ pub fn run() {
             camps::open_camp,
             camps::list_recent_camps,
             roles::list_roles,
+            roles::list_skills,
             roles::save_role,
             roles::delete_role
         ])
