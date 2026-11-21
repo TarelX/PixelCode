@@ -20,28 +20,28 @@ pub(crate) struct Clarification {
 pub(crate) struct Plan {
     scenario: String,
     recruited_roles: Vec<String>,
-    tasks: Vec<Task>,
+    pub(crate) tasks: Vec<Task>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Task {
-    id: String,
-    title: String,
-    description: String,
-    role_id: String,
-    depends_on: Vec<String>,
-    input_artifacts: Vec<String>,
-    output_artifacts: Vec<String>,
-    acceptance_criteria: String,
-    check_command: Option<CheckCommand>,
+pub(crate) struct Task {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) role_id: String,
+    pub(crate) depends_on: Vec<String>,
+    pub(crate) input_artifacts: Vec<String>,
+    pub(crate) output_artifacts: Vec<String>,
+    pub(crate) acceptance_criteria: String,
+    pub(crate) check_command: Option<CheckCommand>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct CheckCommand {
-    program: String,
-    args: Vec<String>,
+pub(crate) struct CheckCommand {
+    pub(crate) program: String,
+    pub(crate) args: Vec<String>,
 }
 
 #[derive(Deserialize)]

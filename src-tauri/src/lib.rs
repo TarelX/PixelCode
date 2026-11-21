@@ -25,6 +25,7 @@ pub fn run() {
             roles::save_role,
             roles::delete_role,
             supervisor::start_role_run,
+            scheduler::start_plan_execution,
             artifacts::read_artifact,
             artifacts::list_artifacts,
             supervisor::stop_role_run
