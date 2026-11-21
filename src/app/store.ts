@@ -14,10 +14,12 @@ interface AppState {
   screen: Screen;
   camp: Camp | null;
   openCamp: (camp: Camp) => void;
+  showTitle: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
   screen: "title",
   camp: null,
   openCamp: (camp) => set({ camp, screen: "camp" }),
+  showTitle: () => set({ screen: "title" }),
 }));

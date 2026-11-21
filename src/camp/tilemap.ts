@@ -1,4 +1,4 @@
-import { Container, Graphics } from "pixi.js";
+import { Assets, Container, Graphics, Sprite, type Texture } from "pixi.js";
 import camp from "../../themes/three-kingdoms/camp.json";
 
 export interface CampZone {
@@ -16,6 +16,7 @@ export interface CampLayout {
   height: number;
   tileSize: number;
   groundColor: string;
+  background?: string;
   zones: CampZone[];
 }
 
@@ -23,8 +24,18 @@ export function loadCampLayout(): CampLayout {
   return camp;
 }
 
-export function drawCamp(layout: CampLayout): Container {
+const scenery = import.meta.glob<string>("/themes/three-kingdoms/tiles/*.png", { query: "?url", import: "default", eager: true });
+
+export async function drawCamp(layout: CampLayout): Promise<Container> {
   const container = new Container();
+  if (layout.background) {
+    const url = scenery[`/themes/three-kingdoms/tiles/${layout.background}`];
+    if (!url) throw new Error(`缺少军营素材：${layout.background}`);
+    const texture = await Assets.load<Texture>(url);
+    texture.source.scaleMode = "nearest";
+    container.addChild(new Sprite(texture));
+    return container;
+  }
   const ground = new Graphics().rect(0, 0, layout.width, layout.height).fill(layout.groundColor);
   container.addChild(ground);
   for (const zone of layout.zones) {
