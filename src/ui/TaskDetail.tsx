@@ -2,11 +2,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import { listArtifacts, readArtifact, type Artifact } from "../orchestrator/artifact-manager";
 import { PixelButton } from "./components/PixelButton";
 import type { PlanTask } from "./plan-layout";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n } from "../i18n";
 
 export function TaskDetail({ task, role, tasks, assignment, resultId }: {
   task: PlanTask; role: string; tasks: PlanTask[]; assignment?: ReactNode; resultId?: string;
 }) {
+  const { theme } = useI18n();
   const fields = [
     [theme.wall.description, task.description],
     [theme.wall.role, role],
@@ -28,6 +29,7 @@ export function TaskDetail({ task, role, tasks, assignment, resultId }: {
 }
 
 function TaskResults({ taskId }: { taskId: string }) {
+  const { theme } = useI18n();
   const [files, setFiles] = useState<Artifact[] | null>(null);
   const [view, setView] = useState<{ artifact: Artifact; content: string } | null>(null);
   const [reading, setReading] = useState(false);

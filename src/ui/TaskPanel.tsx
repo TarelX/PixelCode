@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useRoster } from "../camp/roster";
 import { useRuns, type Clarification } from "../camp/run";
 import { PixelDialog } from "./PixelDialog";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { useI18n, roleName } from "../i18n";
 
 interface Assignment { roleId: string; index: number; request: string }
 
 export function TaskPanel({ campId, ready }: { campId: string; ready: boolean }) {
+  const { locale, theme } = useI18n();
   const role = useRoster((s) => s.roles.find((r) => r.id === s.selectedId));
   const { busy, error, start, stop, dismiss } = useRuns();
   const [prompt, setPrompt] = useState("");
@@ -29,7 +30,7 @@ export function TaskPanel({ campId, ready }: { campId: string; ready: boolean })
     setFollowup(null);
   }
   return <section className="task-panel">
-    <h2>{captain ? theme.planTitle : theme.taskTitle} · {role?.name ?? theme.taskSelect}</h2>
+    <h2>{captain ? theme.planTitle : theme.taskTitle} · {role ? roleName(role, locale) : theme.taskSelect}</h2>
     {role && role.loadouts.length > 1 && <div className="task-loadouts" role="group" aria-label={theme.taskLoadout}>
       {role.loadouts.map((loadout, i) => <button key={i} type="button" aria-pressed={index === i} disabled={busy} onClick={() => setChoice({ roleId: role.id, index: i })}>{loadout.cli} · {loadout.model}</button>)}
     </div>}

@@ -26,7 +26,7 @@ const useCliDetectionStore = create<CliDetectionState>((set, get) => ({
     try {
       set({ results: await invoke<DetectResult[]>("detect_clis") });
     } catch (error) {
-      set({ results: [], error: `无法探测 CLI：${String(error)}` });
+      set({ results: [], error: String(error) });
     } finally {
       set({ loading: false });
     }

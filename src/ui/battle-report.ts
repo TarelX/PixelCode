@@ -2,7 +2,7 @@ import type { Camp } from "../app/store";
 import type { RoleConfig } from "../camp/roster";
 import type { RoleRun } from "../camp/run";
 import type { StoredPlan } from "./plan-layout";
-import theme from "../../themes/three-kingdoms/ui.json";
+import { roleName, type Locale, type ThemeCopy } from "../i18n";
 
 export function reportDay(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -19,9 +19,10 @@ export function reportCounts(statuses: Record<string, number>) {
 export async function renderBattleReport(data: {
   camp: Camp; date: string; roles: RoleConfig[]; runs: Record<string, RoleRun>;
   plan: StoredPlan | null; counts: Record<string, number>; snapshot?: HTMLCanvasElement;
-}): Promise<Blob> {
+}, { locale, theme }: { locale: Locale; theme: ThemeCopy }): Promise<Blob> {
   await document.fonts.ready;
   const canvas = document.createElement("canvas");
+  canvas.lang = locale;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error(theme.report.canvasError);
   const style = getComputedStyle(document.documentElement);
@@ -33,8 +34,17 @@ export async function renderBattleReport(data: {
     const lines: string[] = [];
     let line = "";
     for (const char of text) {
-      if (char === "\n" || ctx.measureText(line + char).width > maxWidth) {
-        lines.push(line); line = char === "\n" ? "" : char;
+      if (char === "\n") {
+        lines.push(line); line = "";
+      } else if (ctx.measureText(line + char).width > maxWidth) {
+        const space = locale === "en" && char !== " " ? line.lastIndexOf(" ") : -1;
+        if (space > 0) {
+          lines.push(line.slice(0, space).trimEnd());
+          line = line.slice(space + 1) + char;
+        } else {
+          lines.push(line);
+          line = char === " " && locale === "en" ? "" : char;
+        }
       } else line += char;
     }
     lines.push(line);
@@ -42,14 +52,15 @@ export async function renderBattleReport(data: {
   };
   const statuses: Record<string, string> = theme.wall.statuses;
   const runStates: Record<string, string> = theme.runStates;
+  const names = new Map(data.roles.map((role) => [role.id, roleName(role, locale)]));
   const rows = [
     ...wrap(data.camp.name || data.camp.root_path), ...wrap(data.camp.root_path),
     "", theme.report.today,
     ...wrap(Object.entries(reportCounts(data.counts)).map(([key, count]) => `${theme.report[key as "done" | "running" | "failed" | "pending"]}  ${count}`).join("     ")),
     ...wrap(theme.report.scope), "", theme.report.roles,
-    ...(data.roles.length ? data.roles.flatMap((role) => wrap(`${role.name}  ·  ${data.runs[role.id] ? runStates[data.runs[role.id].status] : theme.report.idle}`)) : [theme.report.emptyRoles]),
+    ...(data.roles.length ? data.roles.flatMap((role) => wrap(`${names.get(role.id)}  ·  ${data.runs[role.id] ? runStates[data.runs[role.id].status] : theme.report.idle}`)) : [theme.report.emptyRoles]),
     "", theme.report.tasks,
-    ...(data.plan ? data.plan.plan.tasks.flatMap((task, index) => wrap(`${index + 1}. ${task.title}  ·  ${statuses[task.status ?? "pending"] ?? task.status}  ·  ${data.roles.find((role) => role.id === task.role_id)?.name ?? task.role_id}`)) : wrap(theme.wall.empty)),
+    ...(data.plan ? data.plan.plan.tasks.flatMap((task, index) => wrap(`${index + 1}. ${task.title}  ·  ${statuses[task.status ?? "pending"] ?? task.status}  ·  ${names.get(task.role_id) ?? task.role_id}`)) : wrap(theme.wall.empty)),
   ];
   const imageHeight = data.snapshot ? 196 : 0;
   const height = 120 + imageHeight + rows.length * 22;
