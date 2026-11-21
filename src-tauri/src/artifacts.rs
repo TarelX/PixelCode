@@ -248,6 +248,47 @@ mod tests {
     }
 
     #[test]
+    fn captain_persists_an_inert_draft_and_matching_plan_json() {
+        let dir = TestDir::new();
+        let mut conn = crate::db::open(dir.path()).unwrap();
+        let roster = crate::roles::planning_roster(&conn, "camp").unwrap();
+        let json = include_str!("../../tests/scheduler/captain-plan.json");
+        let crate::plans::Reply::Draft(plan) = crate::plans::parse(json, &roster, None).unwrap()
+        else {
+            panic!("fixture must be a draft");
+        };
+        let root = dir.path().join("artifacts");
+        let artifact = plan
+            .save(&mut conn, &root, "camp", "plan-1", "Fix login", 1)
+            .unwrap();
+        let (stored, status): (String, String) = conn
+            .query_row(
+                "SELECT plan_json, status FROM plans WHERE id = 'plan-1' AND camp_id = 'camp'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "draft");
+        assert_eq!(artifact.file_path, "camp/plan-1/plan.json");
+        assert_eq!(read(&conn, &root, &artifact.id).unwrap().content, stored);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM tasks", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        let invalid_root = &artifact.absolute_path;
+        assert!(
+            plan.save(&mut conn, invalid_root, "camp", "plan-2", "Retry", 2)
+                .is_err()
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM plans", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
     fn nested_roundtrip_and_unicode_preview() {
         let dir = TestDir::new();
         let conn = crate::db::open(dir.path()).unwrap();

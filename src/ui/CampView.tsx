@@ -74,7 +74,7 @@ export function CampView() {
   useEffect(() => {
     for (const general of generalsRef.current?.generals ?? []) {
       const status = runs[general.role.id]?.status;
-      const state = status === "completed" ? "done" : status === "failed" ? "error" : status === "stopped" ? "cancelled" : status ?? "idle";
+      const state = status === "completed" ? "done" : status === "failed" ? "error" : status === "stopped" ? "cancelled" : status === "waiting" ? "waiting_user" : status ?? "idle";
       if (general.state !== state) general.setState(state);
     }
   }, [runs, generalsVersion]);
@@ -218,7 +218,7 @@ export function CampView() {
         </div></div>
         <RoleRoster onOpen={openCard} />
       </div>
-      {camp && <TaskPanel campId={camp.id} ready={listening} />}
+      {camp && <TaskPanel key={camp.id} campId={camp.id} ready={listening} />}
       <p className="camp-caption">{theme.campMapHint}</p>
       <PixelDialog
         open={card !== null}

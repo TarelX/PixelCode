@@ -103,7 +103,7 @@ fn command(options: &StartOptions<'_>) -> Result<Command, String> {
 fn stream(
     input: impl BufRead,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<Option<Result<(), String>>, String> {
+) -> Result<Option<Result<String, String>>, String> {
     let mut result = None;
     let mut emitted_text = false;
     let mut partials = HashMap::<usize, String>::new();
@@ -185,7 +185,7 @@ fn stream(
         if !emitted_text && !text.is_empty() {
             emit(RunUpdate::Text { text: text.into() })?;
         }
-        return Ok(Some(Ok(())));
+        return Ok(Some(Ok(text.into())));
     }
     let reason = result["errors"]
         .as_array()
@@ -200,7 +200,7 @@ pub(crate) fn start(
     options: StartOptions<'_>,
     control: &crate::supervisor::RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut child = command(&options)?.spawn().map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             "无法启动 Claude Code：未找到 claude 命令".into()
@@ -276,7 +276,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(outcome, Some(Ok(())));
+        assert_eq!(outcome, Some(Ok("The file is empty.".into())));
         assert_eq!(
             serde_json::to_value(updates.into_inner()).unwrap(),
             serde_json::json!([

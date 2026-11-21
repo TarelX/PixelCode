@@ -75,11 +75,11 @@ pub struct Permissions {
     pub(crate) deny: Vec<String>,
 }
 
-const REVIEW_TOOLS: &[&str] = &["Read", "Grep", "Glob"];
-const REVIEW_DENY: &[&str] = &["Write", "Edit", "Bash", "NotebookEdit"];
+const READ_ONLY_TOOLS: &[&str] = &["Read", "Grep", "Glob"];
+const READ_ONLY_DENY: &[&str] = &["Write", "Edit", "Bash", "NotebookEdit"];
 
-fn reviewer_tool(rule: &str) -> bool {
-    REVIEW_TOOLS.contains(&rule.split_once('(').map_or(rule, |(tool, _)| tool))
+fn read_only_tool(rule: &str) -> bool {
+    READ_ONLY_TOOLS.contains(&rule.split_once('(').map_or(rule, |(tool, _)| tool))
 }
 
 pub(crate) struct RunConfig {
@@ -88,6 +88,7 @@ pub(crate) struct RunConfig {
     pub system_prompt: String,
     pub permissions: Permissions,
     pub artifact_name: &'static str,
+    pub is_captain: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -132,14 +133,14 @@ fn skills() -> Vec<SkillInfo> {
 }
 
 fn validate(role: &RoleConfig) -> Result<(), String> {
-    if role.role_type == "reviewer"
+    if matches!(role.role_type.as_str(), "captain" | "reviewer")
         && role
             .permissions
             .allow
             .iter()
-            .any(|rule| !reviewer_tool(rule))
+            .any(|rule| !read_only_tool(rule))
     {
-        return Err("审查员仅允许只读工具 Read、Grep、Glob，不能允许写入或执行命令".into());
+        return Err("队长和审查员仅允许只读工具 Read、Grep、Glob".into());
     }
     if role.id.is_empty()
         || !role.id.split('-').all(|part| {
@@ -258,16 +259,18 @@ pub(crate) fn run_config(
         .loadouts
         .get(loadout_index)
         .ok_or("未找到角色的武器槽")?;
-    let artifact_name = if role.role_type == "reviewer" {
-        role.permissions.allow.retain(|rule| reviewer_tool(rule));
-        for tool in REVIEW_DENY {
+    if matches!(role.role_type.as_str(), "captain" | "reviewer") {
+        role.permissions.allow.retain(|rule| read_only_tool(rule));
+        for tool in READ_ONLY_DENY {
             if !role.permissions.deny.iter().any(|rule| rule == tool) {
                 role.permissions.deny.push((*tool).into());
             }
         }
-        "review.md"
-    } else {
-        "output.md"
+    }
+    let artifact_name = match role.role_type.as_str() {
+        "captain" => "plan.json",
+        "reviewer" => "review.md",
+        _ => "output.md",
     };
     let mut system_prompt = role.personality;
     for id in role.skills {
@@ -284,7 +287,31 @@ pub(crate) fn run_config(
         system_prompt,
         permissions: role.permissions,
         artifact_name,
+        is_captain: role.role_type == "captain",
     })
+}
+
+#[derive(Serialize)]
+pub(crate) struct PlanningRole {
+    pub id: String,
+    role_type: String,
+    title: Option<String>,
+    task_types: Vec<String>,
+}
+
+pub(crate) fn planning_roster(
+    connection: &Connection,
+    camp_id: &str,
+) -> Result<Vec<PlanningRole>, String> {
+    Ok(effective_roles(connection, Some(camp_id))?
+        .into_iter()
+        .map(|role| PlanningRole {
+            id: role.id,
+            role_type: role.role_type,
+            title: role.title,
+            task_types: role.task_types,
+        })
+        .collect())
 }
 
 fn upsert(connection: &Connection, role: &RoleConfig, camp_id: Option<&str>) -> Result<(), String> {
@@ -362,7 +389,7 @@ pub fn delete_role(
 pub(crate) mod tests {
     use super::*;
 
-    fn connection() -> Connection {
+    pub(crate) fn connection() -> Connection {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(include_str!("../migrations/001_initial.sql"))
@@ -432,11 +459,37 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn captain_permissions_are_clamped_even_for_legacy_rows() {
+        let connection = connection();
+        let mut role = presets()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == "captain")
+            .unwrap();
+        assert!(validate(&role).is_ok());
+        upsert(&connection, &role, Some("camp")).unwrap();
+        role.permissions
+            .allow
+            .extend(["Write".into(), "Edit".into(), "Bash".into()]);
+        assert!(validate(&role).is_err());
+        connection
+            .execute(
+                "UPDATE roles SET permissions_json = ?1 WHERE id = 'captain' AND camp_id = 'camp'",
+                [json(&role.permissions).unwrap()],
+            )
+            .unwrap();
+        let run = run_config(&connection, "camp", "captain", 1).unwrap();
+        assert!(run.is_captain);
+        assert_eq!(run.artifact_name, "plan.json");
+        assert_eq!(run.permissions.allow, READ_ONLY_TOOLS);
+    }
+
+    #[test]
     fn reviewer_permissions_and_artifact_are_read_only() {
         let config = reviewer_config();
         assert_eq!(config.permissions.allow, ["Read", "Grep", "Glob"]);
         assert_eq!(config.artifact_name, "review.md");
-        for tool in REVIEW_DENY {
+        for tool in READ_ONLY_DENY {
             assert!(config.permissions.deny.iter().any(|rule| rule == tool));
         }
     }
@@ -463,7 +516,7 @@ pub(crate) mod tests {
                 assert!(
                     upsert(&connection, &role, Some("camp"))
                         .unwrap_err()
-                        .contains("审查员仅允许只读工具")
+                        .contains("仅允许只读工具")
                 );
             }
             role.permissions.allow = vec!["Read".into()];
@@ -475,7 +528,7 @@ pub(crate) mod tests {
             ).unwrap();
             let config = run_config(&connection, "camp", id, 0).unwrap();
             assert_eq!(config.permissions.allow, ["Read"]);
-            for tool in REVIEW_DENY {
+            for tool in READ_ONLY_DENY {
                 assert!(config.permissions.deny.iter().any(|rule| rule == tool));
             }
             role.permissions.allow.clear();

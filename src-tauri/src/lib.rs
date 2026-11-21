@@ -3,6 +3,7 @@ mod artifacts;
 mod camps;
 mod db;
 mod git;
+mod plans;
 mod roles;
 mod scheduler;
 mod supervisor;

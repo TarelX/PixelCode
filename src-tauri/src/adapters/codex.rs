@@ -79,8 +79,9 @@ fn command(options: &StartOptions<'_>) -> Command {
 fn stream(
     input: impl BufRead,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<Option<Result<(), String>>, String> {
+) -> Result<Option<Result<String, String>>, String> {
     let mut result = None;
+    let mut final_text = String::new();
     let mut texts = HashMap::<String, String>::new();
     let mut emitted_text = false;
     let mut tools = HashSet::new();
@@ -98,6 +99,9 @@ fn stream(
                 match item["type"].as_str() {
                     Some("agent_message") => {
                         if let Some(text) = item["text"].as_str() {
+                            if message["type"] == "item.completed" {
+                                final_text = text.into();
+                            }
                             let previous = texts.entry(id.into()).or_default();
                             let delta = text.strip_prefix(previous.as_str()).unwrap_or(text);
                             if !delta.is_empty() {
@@ -130,7 +134,9 @@ fn stream(
                     _ => {}
                 }
             }
-            Some("turn.completed") if result.is_none() => result = Some(Ok(())),
+            Some("turn.completed") if result.is_none() => {
+                result = Some(Ok(std::mem::take(&mut final_text)));
+            }
             Some("turn.failed" | "error") => {
                 let reason = message["error"]["message"]
                     .as_str()
@@ -148,7 +154,7 @@ pub(crate) fn start(
     options: StartOptions<'_>,
     control: &crate::supervisor::RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut child = command(&options).spawn().map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             "无法启动 Codex：未找到 codex 命令".into()
@@ -210,7 +216,7 @@ mod tests {
                 }
             )
             .unwrap(),
-            Some(Ok(()))
+            Some(Ok("Done.".into()))
         );
         assert_eq!(
             serde_json::to_value(updates.into_inner()).unwrap(),

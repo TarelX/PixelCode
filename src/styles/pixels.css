@@ -54,3 +54,6 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ui-accent); out
 .task-panel button, .run-bubble button { border: 1px solid var(--ui-border); border-radius: 0; background: var(--ui-bg); color: var(--text-light); padding: 3px 10px; cursor: pointer; }
 .task-panel button[aria-pressed="true"] { border-color: var(--ui-accent); color: var(--ui-accent); }
 .task-panel button:disabled { opacity: .45; cursor: default; }
+.plan-clarification { display: grid; gap: 8px; }
+.plan-clarification ol { margin: 0 0 8px; padding-left: 24px; line-height: 1.65; }
+.plan-clarification button[type="submit"]:not(:disabled) { border-color: var(--ui-accent); color: var(--ui-accent); }
