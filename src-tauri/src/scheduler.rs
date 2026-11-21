@@ -3,6 +3,10 @@ use std::{
     io::Read,
     path::Path,
     process::{Command, Stdio},
+    sync::{
+        Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use rusqlite::{Connection, TransactionBehavior, params};
@@ -12,6 +16,7 @@ use tauri::{Emitter, Manager, WebviewWindow};
 use crate::{
     adapters::claude_code::StartOptions,
     artifacts, camps,
+    git::GitService,
     plans::{self, CheckCommand, Plan},
     roles,
     supervisor::{self, RunSlot},
@@ -28,9 +33,9 @@ struct TaskEvent {
     message: Option<String>,
 }
 
-trait Runner {
-    fn run(&mut self, role: &str, prompt: &str) -> Result<String, String>;
-    fn check(&mut self, command: &CheckCommand) -> Result<(bool, String), String>;
+trait Runner: Sync {
+    fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String>;
+    fn check(&self, command: &CheckCommand, cwd: &Path) -> Result<(bool, String), String>;
     fn stopped(&self) -> bool;
     fn emit(&self, event: &TaskEvent) -> Result<(), String>;
 }
@@ -203,203 +208,321 @@ fn review_rejection(text: &str) -> Option<String> {
     }
 }
 
-fn execute(
-    conn: &Connection,
-    root: &Path,
-    camp: &str,
-    id: &str,
-    plan: &Plan,
-    runner: &mut impl Runner,
-) -> Result<(), String> {
-    let roster = roles::planning_roster(conn, camp)?;
-    let reviewer = roster.iter().find(|role| role.role_type == "reviewer");
-    let mut completed = HashSet::new();
-    for task in &plan.tasks {
-        runner.emit(&TaskEvent {
-            camp_id: camp.into(),
-            plan_id: id.into(),
-            task_id: format!("{id}-{}", task.id),
-            status: "pending".into(),
-            attempts: 0,
-            review_rounds: 0,
-            message: None,
-        })?;
-    }
-    for index in order(plan)? {
-        let task = &plan.tasks[index];
-        if runner.stopped() {
-            return Ok(());
+const MAX_PARALLEL: usize = 3;
+static INTEGRATION: Mutex<()> = Mutex::new(());
+
+fn database(conn: &Mutex<Connection>) -> Result<MutexGuard<'_, Connection>, String> {
+    conn.lock().map_err(|_| "无法访问大营数据库".into())
+}
+
+struct Execution<'a, R> {
+    conn: &'a Mutex<Connection>,
+    root: &'a Path,
+    cwd: &'a Path,
+    worktrees: &'a Path,
+    camp: &'a str,
+    id: &'a str,
+    plan: &'a Plan,
+    runner: &'a R,
+}
+
+enum Attempt {
+    Done,
+    Rework(String),
+    Blocked(String),
+    Stopped,
+}
+
+impl<R: Runner> Execution<'_, R> {
+    fn execute(&self) -> Result<(), String> {
+        let sequence = order(self.plan)?;
+        let git = GitService::detect(self.cwd);
+        let limit = if git.is_some() { MAX_PARALLEL } else { 1 };
+        for task in &self.plan.tasks {
+            self.runner.emit(&self.event(&task.id))?;
         }
-        let mut event = TaskEvent {
-            camp_id: camp.into(),
-            plan_id: id.into(),
-            task_id: format!("{id}-{}", task.id),
+        let halt = AtomicBool::new(false);
+        std::thread::scope(|scope| {
+            let (send, receive) = std::sync::mpsc::channel();
+            let mut started = HashSet::new();
+            let mut completed = HashSet::new();
+            let mut active = 0;
+            let mut first_error = None;
+            loop {
+                for &index in &sequence {
+                    if active >= limit || halt.load(Ordering::SeqCst) || self.runner.stopped() {
+                        break;
+                    }
+                    let task = &self.plan.tasks[index];
+                    if started.contains(&index)
+                        || !task.depends_on.iter().all(|dep| completed.contains(dep))
+                    {
+                        continue;
+                    }
+                    started.insert(index);
+                    active += 1;
+                    let send = send.clone();
+                    let git = git.as_ref();
+                    let halt = &halt;
+                    scope.spawn(move || {
+                        let result = self.task(index, git, halt);
+                        if !matches!(result, Ok(true)) {
+                            halt.store(true, Ordering::SeqCst);
+                        }
+                        let _ = send.send((index, result));
+                    });
+                }
+                if active == 0 {
+                    break;
+                }
+                let (index, result) = receive.recv().map_err(|e| e.to_string())?;
+                active -= 1;
+                match result {
+                    Ok(true) => {
+                        completed.insert(self.plan.tasks[index].id.clone());
+                    }
+                    Ok(false) => (),
+                    Err(error) => {
+                        if first_error.is_none() {
+                            first_error = Some(error);
+                        }
+                    }
+                }
+            }
+            first_error.map_or(Ok(()), Err)
+        })
+    }
+
+    fn event(&self, task: &str) -> TaskEvent {
+        TaskEvent {
+            camp_id: self.camp.into(),
+            plan_id: self.id.into(),
+            task_id: format!("{}-{task}", self.id),
             status: "pending".into(),
             attempts: 0,
             review_rounds: 0,
             message: None,
-        };
+        }
+    }
+
+    fn status(
+        &self,
+        event: &mut TaskEvent,
+        next: &str,
+        message: Option<String>,
+    ) -> Result<(), String> {
+        status(&*database(self.conn)?, self.runner, event, next, message)
+    }
+
+    fn artifact(
+        &self,
+        event: &TaskEvent,
+        kind: &str,
+        name: &str,
+        content: &str,
+    ) -> Result<(), String> {
+        artifacts::write_artifact(
+            &*database(self.conn)?,
+            self.root,
+            self.camp,
+            &event.task_id,
+            kind,
+            Path::new(name),
+            content,
+        )?;
+        Ok(())
+    }
+
+    fn task(
+        &self,
+        index: usize,
+        git: Option<&GitService>,
+        halt: &AtomicBool,
+    ) -> Result<bool, String> {
+        let task = &self.plan.tasks[index];
+        let mut event = self.event(&task.id);
         let result = (|| {
+            let roster = roles::planning_roster(&*database(self.conn)?, self.camp)?;
             let is_reviewer = roster
                 .iter()
                 .any(|role| role.id == task.role_id && role.role_type == "reviewer");
+            let reviewer = roster.iter().find(|role| role.role_type == "reviewer");
             let mut prompt = format!(
                 "{}\n{}\n验收标准：{}",
                 task.title, task.description, task.acceptance_criteria
             );
-            for name in &task.input_artifacts {
-                let mut found = false;
-                for dep in task
-                    .depends_on
-                    .iter()
-                    .filter(|dep| completed.contains(*dep))
-                {
-                    let dependency = format!("{id}-{dep}");
-                    let path = format!("{camp}/{dependency}/{name}");
-                    let mut query = conn.prepare("SELECT id FROM artifacts WHERE task_id=?1 AND file_path=?2 ORDER BY created_at DESC, rowid DESC LIMIT 1").map_err(db_error)?;
-                    let ids = query
-                        .query_map(params![dependency, path], |row| row.get::<_, String>(0))
-                        .map_err(db_error)?;
-                    for artifact_id in ids {
-                        let content =
-                            artifacts::read(conn, root, &artifact_id.map_err(db_error)?)?.content;
-                        prompt.push_str(&format!("\n输入产物 {name}：\n{content}"));
-                        found = true;
+            {
+                let conn = database(self.conn)?;
+                for name in &task.input_artifacts {
+                    let mut found = false;
+                    for dep in &task.depends_on {
+                        let dependency = format!("{}-{dep}", self.id);
+                        let path = format!("{}/{dependency}/{name}", self.camp);
+                        let artifact_id = conn.query_row(
+                            "SELECT id FROM artifacts WHERE task_id=?1 AND file_path=?2 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                            params![dependency, path], |row| row.get::<_, String>(0));
+                        match artifact_id {
+                            Ok(id) => {
+                                let content = artifacts::read(&conn, self.root, &id)?.content;
+                                prompt.push_str(&format!("\n输入产物 {name}：\n{content}"));
+                                found = true;
+                            }
+                            Err(rusqlite::Error::QueryReturnedNoRows) => (),
+                            Err(e) => return Err(db_error(e)),
+                        }
                     }
-                }
-                if !found {
-                    return Err(format!("已完成的依赖锦囊缺少输入产物：{name}"));
+                    if !found {
+                        return Err(format!("已完成的依赖锦囊缺少输入产物：{name}"));
+                    }
                 }
             }
             if is_reviewer {
                 prompt.push_str(&format!("\n{REVIEW_VERDICT}"));
             }
+            let worktree = if let Some(git) = git {
+                let _lock = INTEGRATION.lock().map_err(|_| "无法访问改动集成锁")?;
+                Some(git.worktree(self.worktrees, self.camp, &event.task_id)?)
+            } else {
+                None
+            };
+            let cwd = worktree
+                .as_ref()
+                .map_or(self.cwd, |tree| tree.path.as_path());
             let mut feedback = String::new();
             loop {
-                if runner.stopped() {
-                    return Ok(None);
+                if self.runner.stopped() {
+                    return Ok(false);
                 }
-                status(conn, runner, &mut event, "running", None)?;
-                let output = runner.run(&task.role_id, &format!("{prompt}\n{feedback}"))?;
-                if runner.stopped() {
-                    return Ok(None);
+                self.status(&mut event, "running", None)?;
+                let output = self
+                    .runner
+                    .run(&task.role_id, &format!("{prompt}\n{feedback}"), cwd);
+                let patch = worktree
+                    .as_ref()
+                    .map(|tree| tree.patch())
+                    .transpose()?
+                    .unwrap_or_default();
+                if !patch.is_empty() {
+                    let text = std::str::from_utf8(&patch)
+                        .map_err(|e| format!("无法保存改动补丁：{e}"))?;
+                    self.artifact(&event, "output", "changes.diff", text)?;
                 }
-                let name = task
-                    .output_artifacts
-                    .first()
-                    .map(String::as_str)
-                    .unwrap_or("output.md");
-                artifacts::write_artifact(
-                    conn,
-                    root,
-                    camp,
-                    &event.task_id,
+                if self.runner.stopped() {
+                    return Ok(false);
+                }
+                let output = output?;
+                self.artifact(
+                    &event,
                     "output",
-                    Path::new(name),
+                    task.output_artifacts
+                        .first()
+                        .map(String::as_str)
+                        .unwrap_or("output.md"),
                     &output,
                 )?;
-                status(conn, runner, &mut event, "checking", None)?;
-                let failure = if output.trim().is_empty() {
-                    Some(EMPTY_OUTPUT.to_string())
-                } else if let Some(command) = &task.check_command {
-                    let (passed, log) = runner.check(command)?;
-                    if runner.stopped() {
-                        return Ok(None);
-                    }
-                    artifacts::write_artifact(
-                        conn,
-                        root,
-                        camp,
-                        &event.task_id,
-                        "check",
-                        Path::new(&format!(
-                            "checks/{}-{}.log",
-                            event.attempts, event.review_rounds
-                        )),
-                        &log,
+                let _integration = INTEGRATION.lock().map_err(|_| "无法访问改动集成锁")?;
+                if let Some(git) = git
+                    && let Err(error) = git.apply(&patch, false)
+                {
+                    halt.store(true, Ordering::SeqCst);
+                    self.status(
+                        &mut event,
+                        "blocked",
+                        Some(format!("无法把改动并入大营：{error}")),
                     )?;
-                    (!passed).then_some(log)
-                } else {
-                    None
-                };
-                if let Some(log) = failure {
-                    event.attempts += 1;
-                    feedback = format!("检查失败，请返工：\n{}", tail(&log));
-                    if event.attempts > 3 {
-                        status(conn, runner, &mut event, "blocked", Some(feedback))?;
-                        return Ok(None);
-                    }
-                    continue;
+                    return Ok(false);
                 }
-                if is_reviewer {
-                    if let Some(reason) = review_rejection(&output) {
-                        event.review_rounds += 1;
-                        status(
-                            conn,
-                            runner,
-                            &mut event,
-                            "blocked",
-                            Some(format!("审查未通过：{reason}")),
-                        )?;
-                        return Ok(None);
+                let attempt = (|| {
+                    if self.runner.stopped() {
+                        return Ok(Attempt::Stopped);
                     }
-                } else {
-                    let reviewer = reviewer.ok_or("大营缺少审查员角色")?;
-                    status(conn, runner, &mut event, "reviewing", None)?;
-                    let text = runner.run(
-                        &reviewer.id,
-                        &format!(
-                            "审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"
-                        ),
-                    )?;
-                    if runner.stopped() {
-                        return Ok(None);
-                    }
-                    artifacts::write_artifact(
-                        conn,
-                        root,
-                        camp,
-                        &event.task_id,
-                        "review",
-                        Path::new("review.md"),
-                        &text,
-                    )?;
-                    if let Some(reason) = review_rejection(&text) {
-                        event.review_rounds += 1;
-                        feedback = format!("审查打回，请返工：{reason}");
-                        if event.review_rounds > 3 {
-                            status(conn, runner, &mut event, "blocked", Some(feedback))?;
-                            return Ok(None);
+                    self.status(&mut event, "checking", None)?;
+                    let failure = if output.trim().is_empty() {
+                        Some(EMPTY_OUTPUT.to_string())
+                    } else if let Some(command) = &task.check_command {
+                        let (passed, log) = self.runner.check(command, self.cwd)?;
+                        if self.runner.stopped() {
+                            return Ok(Attempt::Stopped);
                         }
-                        continue;
+                        self.artifact(
+                            &event,
+                            "check",
+                            &format!("checks/{}-{}.log", event.attempts, event.review_rounds),
+                            &log,
+                        )?;
+                        (!passed).then_some(log)
+                    } else {
+                        None
+                    };
+                    if let Some(log) = failure {
+                        event.attempts += 1;
+                        let feedback = format!("检查失败，请返工：\n{}", tail(&log));
+                        return Ok(if event.attempts > 3 {
+                            Attempt::Blocked(feedback)
+                        } else {
+                            Attempt::Rework(feedback)
+                        });
                     }
+                    if is_reviewer {
+                        if let Some(reason) = review_rejection(&output) {
+                            event.review_rounds += 1;
+                            return Ok(Attempt::Blocked(format!("审查未通过：{reason}")));
+                        }
+                    } else {
+                        let reviewer = reviewer.ok_or("大营缺少审查员角色")?;
+                        self.status(&mut event, "reviewing", None)?;
+                        let text = self.runner.run(&reviewer.id, &format!("审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"), cwd)?;
+                        if self.runner.stopped() {
+                            return Ok(Attempt::Stopped);
+                        }
+                        self.artifact(&event, "review", "review.md", &text)?;
+                        if let Some(reason) = review_rejection(&text) {
+                            event.review_rounds += 1;
+                            let feedback = format!("审查打回，请返工：{reason}");
+                            return Ok(if event.review_rounds > 3 {
+                                Attempt::Blocked(feedback)
+                            } else {
+                                Attempt::Rework(feedback)
+                            });
+                        }
+                    }
+                    self.status(&mut event, "done", None)?;
+                    Ok::<_, String>(Attempt::Done)
+                })();
+                if !matches!(attempt, Ok(Attempt::Done))
+                    && let Some(git) = git
+                    && let Err(error) = git.apply(&patch, true)
+                {
+                    halt.store(true, Ordering::SeqCst);
+                    self.status(
+                        &mut event,
+                        "blocked",
+                        Some(format!("无法撤回大营改动：{error}")),
+                    )?;
+                    return Ok(false);
                 }
-                status(conn, runner, &mut event, "done", None)?;
-                return Ok(Some(()));
+                match attempt? {
+                    Attempt::Done => return Ok(true),
+                    Attempt::Stopped => return Ok(false),
+                    Attempt::Blocked(message) => {
+                        halt.store(true, Ordering::SeqCst);
+                        self.status(&mut event, "blocked", Some(message))?;
+                        return Ok(false);
+                    }
+                    Attempt::Rework(message) => feedback = message,
+                }
             }
         })();
-        if runner.stopped() && !matches!(result, Ok(Some(()))) {
-            status(
-                conn,
-                runner,
-                &mut event,
-                "pending",
-                Some("用户已停止执行".into()),
-            )?;
-            return Ok(());
+        if self.runner.stopped() && !matches!(result, Ok(true)) {
+            self.status(&mut event, "pending", Some("用户已停止执行".into()))?;
+            return Ok(false);
         }
-        match result {
-            Ok(Some(())) => {
-                completed.insert(task.id.clone());
-            }
-            Ok(None) => return Ok(()),
-            Err(error) => {
-                status(conn, runner, &mut event, "failed", Some(error.clone()))?;
-                return Err(error);
-            }
+        if let Err(error) = &result {
+            halt.store(true, Ordering::SeqCst);
+            self.status(&mut event, "failed", Some(error.clone()))?;
         }
+        result
     }
-    Ok(())
 }
 
 fn check(command: &CheckCommand, cwd: &Path, slot: &RunSlot) -> Result<(bool, String), String> {
@@ -444,20 +567,19 @@ fn check(command: &CheckCommand, cwd: &Path, slot: &RunSlot) -> Result<(bool, St
 }
 
 struct LiveRunner<'a> {
-    conn: &'a Connection,
+    conn: &'a Mutex<Connection>,
     camp: &'a str,
-    cwd: &'a Path,
     slot: &'a RunSlot,
     window: &'a WebviewWindow,
 }
 
 impl Runner for LiveRunner<'_> {
-    fn run(&mut self, role: &str, prompt: &str) -> Result<String, String> {
-        let config = roles::run_config(self.conn, self.camp, role, 0)?;
+    fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String> {
+        let config = roles::run_config(&*database(self.conn)?, self.camp, role, 0)?;
         supervisor::dispatch(
             &config.cli,
             StartOptions {
-                cwd: self.cwd,
+                cwd,
                 model: &config.model,
                 system_prompt: &config.system_prompt,
                 prompt,
@@ -467,8 +589,8 @@ impl Runner for LiveRunner<'_> {
             &|_| Ok(()),
         )
     }
-    fn check(&mut self, command: &CheckCommand) -> Result<(bool, String), String> {
-        check(command, self.cwd, self.slot)
+    fn check(&self, command: &CheckCommand, cwd: &Path) -> Result<(bool, String), String> {
+        check(command, cwd, self.slot)
     }
     fn stopped(&self) -> bool {
         self.slot.is_stopped()
@@ -501,21 +623,29 @@ pub async fn approve_plan_execution(
         let cwd = camps::run_root(&conn, &camp_id)?;
         let root = window.state::<artifacts::ArtifactRoot>();
         let plan = approve(&mut conn, &camp_id, &plan_id, &assignments)?;
-        let result = execute(
-            &conn,
-            &root.0,
-            &camp_id,
+        let conn = Mutex::new(conn);
+        let runner = LiveRunner {
+            conn: &conn,
+            camp: &camp_id,
+            slot: &slot,
+            window: &window,
+        };
+        let result = Execution {
+            conn: &conn,
+            root: &root.0,
+            cwd: &cwd,
+            worktrees: &data_dir.join("worktrees"),
+            camp: &camp_id,
+            id: &plan_id,
+            plan: &plan,
+            runner: &runner,
+        }
+        .execute();
+        let final_status = finish(
+            &*database(&conn)?,
             &plan_id,
-            &plan,
-            &mut LiveRunner {
-                conn: &conn,
-                camp: &camp_id,
-                cwd: &cwd,
-                slot: &slot,
-                window: &window,
-            },
+            result.is_ok() && !slot.is_stopped(),
         );
-        let final_status = finish(&conn, &plan_id, result.is_ok() && !slot.is_stopped());
         drop(active);
         let _ = window.emit_to(window.label(), "plan-state", &camp_id);
         final_status?;
@@ -528,14 +658,16 @@ pub async fn approve_plan_execution(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
 
     #[derive(Default)]
     struct Fake {
         failures: u32,
         rejects: u32,
-        runs: Vec<String>,
-        events: RefCell<Vec<TaskEvent>>,
+        runs: Mutex<Vec<String>>,
+        events: Mutex<Vec<TaskEvent>>,
+        checks: Mutex<u32>,
+        reviews: Mutex<u32>,
+        outputs: Mutex<u32>,
         error: bool,
         stop: bool,
         invalid_review: bool,
@@ -543,8 +675,8 @@ mod tests {
         empty: u32,
     }
     impl Runner for Fake {
-        fn run(&mut self, role: &str, prompt: &str) -> Result<String, String> {
-            self.runs.push(role.into());
+        fn run(&self, role: &str, prompt: &str, _: &Path) -> Result<String, String> {
+            self.runs.lock().unwrap().push(role.into());
             if self.error {
                 return Err("无法启动角色 CLI".into());
             }
@@ -553,8 +685,9 @@ mod tests {
                 if self.invalid_review {
                     return Ok("not JSON".into());
                 }
-                let verdict = if self.rejects > 0 {
-                    self.rejects -= 1;
+                let mut reviews = self.reviews.lock().unwrap();
+                *reviews += 1;
+                let verdict = if *reviews <= self.rejects {
                     "reject"
                 } else {
                     "approve"
@@ -564,8 +697,9 @@ mod tests {
                     serde_json::json!({"verdict": verdict, "reason": "审查说明"})
                 ));
             }
-            if self.empty > 0 {
-                self.empty -= 1;
+            let mut outputs = self.outputs.lock().unwrap();
+            *outputs += 1;
+            if *outputs <= self.empty {
                 return Ok(" \n".into());
             }
             if role == "backend" {
@@ -573,22 +707,24 @@ mod tests {
             }
             Ok("角色输出".into())
         }
-        fn check(&mut self, _: &CheckCommand) -> Result<(bool, String), String> {
-            let passed = self.failures == 0;
-            self.failures = self.failures.saturating_sub(1);
+        fn check(&self, _: &CheckCommand, _: &Path) -> Result<(bool, String), String> {
+            let mut checks = self.checks.lock().unwrap();
+            let passed = *checks >= self.failures;
+            *checks += 1;
             Ok((passed, "检查日志".into()))
         }
         fn stopped(&self) -> bool {
-            (self.stop && !self.runs.is_empty())
+            (self.stop && !self.runs.lock().unwrap().is_empty())
                 || (self.stop_on_done
                     && self
                         .events
-                        .borrow()
+                        .lock()
+                        .unwrap()
                         .iter()
                         .any(|event| event.status == "done"))
         }
         fn emit(&self, event: &TaskEvent) -> Result<(), String> {
-            self.events.borrow_mut().push(event.clone());
+            self.events.lock().unwrap().push(event.clone());
             Ok(())
         }
     }
@@ -615,13 +751,41 @@ mod tests {
             ));
         let mut conn = connection("draft");
         let plan = prepare(&mut conn, "camp", "plan").unwrap();
-        let result = execute(&conn, &root, "camp", "plan", &plan, fake);
+        let result = execute(&mut conn, &root, "camp", "plan", &plan, fake);
         assert_eq!(result.is_err(), fake.error);
         finish(&conn, "plan", result.is_ok() && !fake.stopped()).unwrap();
         if root.exists() {
             std::fs::remove_dir_all(root).unwrap();
         }
         conn
+    }
+
+    fn execute(
+        conn: &mut Connection,
+        root: &Path,
+        camp: &str,
+        id: &str,
+        plan: &Plan,
+        runner: &impl Runner,
+    ) -> Result<(), String> {
+        std::fs::create_dir_all(root).unwrap();
+        let shared = Mutex::new(std::mem::replace(
+            conn,
+            Connection::open_in_memory().unwrap(),
+        ));
+        let result = Execution {
+            conn: &shared,
+            root,
+            cwd: root,
+            worktrees: &root.join("worktrees"),
+            camp,
+            id,
+            plan,
+            runner,
+        }
+        .execute();
+        *conn = shared.into_inner().unwrap();
+        result
     }
 
     fn state(conn: &Connection, task: &str) -> (String, u32, u32) {
@@ -729,7 +893,8 @@ mod tests {
         assert!(
             !fake
                 .events
-                .borrow()
+                .lock()
+                .unwrap()
                 .iter()
                 .any(|event| event.status == "pending" && event.message.is_some())
         );
@@ -742,8 +907,8 @@ mod tests {
             ..Fake::default()
         };
         let conn = run(&mut fake);
-        assert_eq!(fake.runs[0], "debugger");
-        assert_eq!(fake.runs[2], "backend");
+        assert_eq!(fake.runs.lock().unwrap()[0], "debugger");
+        assert_eq!(fake.runs.lock().unwrap()[2], "backend");
         assert_eq!(state(&conn, "fix"), ("done".into(), 3, 0));
         assert_eq!(
             conn.query_row("SELECT status FROM plans", [], |r| r.get::<_, String>(0))
@@ -764,7 +929,7 @@ mod tests {
             failures: 4,
             ..Fake::default()
         };
-        execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+        execute(&mut conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
         finish(&conn, "plan", true).unwrap();
         assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 4, 0));
         assert_eq!(state(&conn, "fix").0, "pending");
@@ -787,7 +952,8 @@ mod tests {
             if expected == "blocked" {
                 assert!(
                     fake.events
-                        .borrow()
+                        .lock()
+                        .unwrap()
                         .last()
                         .unwrap()
                         .message
@@ -809,9 +975,12 @@ mod tests {
             .unwrap()
             .join("target/scheduler-docs-test");
         let mut fake = Fake::default();
-        execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+        execute(&mut conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
         finish(&conn, "plan", true).unwrap();
-        assert_eq!(fake.runs, ["captain", "reviewer", "reviewer"]);
+        assert_eq!(
+            *fake.runs.lock().unwrap(),
+            ["captain", "reviewer", "reviewer"]
+        );
         assert_eq!(state(&conn, "actions").0, "done");
         assert_eq!(state(&conn, "verify").0, "done");
         assert!(
@@ -908,8 +1077,8 @@ mod tests {
             .unwrap()
             .join("target/scheduler-reviewer-test");
         let mut fake = Fake::default();
-        execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
-        assert_eq!(fake.runs, ["reviewer"]);
+        execute(&mut conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+        assert_eq!(*fake.runs.lock().unwrap(), ["reviewer"]);
         assert_eq!(state(&conn, "reproduce").0, "done");
         assert!(
             root.join("camp")
@@ -920,7 +1089,8 @@ mod tests {
         assert!(
             !fake
                 .events
-                .borrow()
+                .lock()
+                .unwrap()
                 .iter()
                 .any(|event| event.status == "reviewing")
         );
@@ -950,10 +1120,10 @@ mod tests {
                 ..Fake::default()
             };
 
-            execute(&conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
+            execute(&mut conn, &root, "camp", "plan", &plan, &mut fake).unwrap();
             finish(&conn, "plan", true).unwrap();
 
-            assert_eq!(fake.runs, ["reviewer"]);
+            assert_eq!(*fake.runs.lock().unwrap(), ["reviewer"]);
             assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 0, 1));
             assert_eq!(state(&conn, "fix").0, "pending");
             assert_eq!(
@@ -961,7 +1131,13 @@ mod tests {
                 "aborted"
             );
             assert_eq!(
-                fake.events.borrow().last().unwrap().message.as_deref(),
+                fake.events
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .message
+                    .as_deref(),
                 Some(format!("审查未通过：{reason}").as_str())
             );
         }
@@ -994,6 +1170,397 @@ mod tests {
             } else {
                 "无法启动"
             }));
+        }
+    }
+
+    #[test]
+    fn parallel_tasks_integrate_and_dependent_sees_both() {
+        parallel_case(3, true, 2, false, false);
+    }
+
+    #[test]
+    fn parallelism_is_capped_at_three() {
+        parallel_case(7, true, 3, false, false);
+    }
+
+    #[test]
+    fn block_stops_new_work_but_inflight_sibling_finishes() {
+        parallel_case(3, true, 2, true, false);
+    }
+
+    #[test]
+    fn conflicting_patch_is_blocked_and_retained() {
+        parallel_case(2, true, 2, false, true);
+    }
+
+    #[test]
+    fn non_git_tasks_are_sequential_in_camp_root() {
+        parallel_case(3, false, 1, false, false);
+    }
+
+    #[derive(Default)]
+    struct ParallelState {
+        active: usize,
+        peak: usize,
+        entered: usize,
+        done: HashSet<String>,
+        blocked: bool,
+        paths: Vec<std::path::PathBuf>,
+        started: Vec<usize>,
+        checks: usize,
+    }
+
+    struct ParallelRunner {
+        state: Mutex<ParallelState>,
+        changed: std::sync::Condvar,
+        width: usize,
+        root: std::path::PathBuf,
+        isolated: bool,
+        block: bool,
+        conflict: bool,
+        dependent: bool,
+    }
+
+    impl Runner for ParallelRunner {
+        fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String> {
+            if role == "reviewer" {
+                assert!(
+                    self.state
+                        .lock()
+                        .unwrap()
+                        .paths
+                        .iter()
+                        .any(|path| path == cwd)
+                );
+                return Ok(r#"{"verdict":"approve","reason":"ok"}"#.into());
+            }
+            let index = prompt
+                .lines()
+                .next()
+                .unwrap()
+                .strip_prefix('T')
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            let mut state = self.state.lock().unwrap();
+            if self.dependent && index == 2 {
+                if self.block {
+                    panic!("blocked plan started another task");
+                }
+                assert!(state.done.contains("plan-t0") && state.done.contains("plan-t1"));
+                assert!(cwd.join("file-0.txt").is_file() && cwd.join("file-1.txt").is_file());
+            }
+            state.started.push(index);
+            state.paths.push(cwd.to_path_buf());
+            if self.isolated {
+                assert!(cwd.ends_with(Path::new("camp").join(format!("plan-t{index}"))));
+            } else {
+                assert_eq!(cwd, self.root);
+            }
+            state.active += 1;
+            state.peak = state.peak.max(state.active);
+            state.entered += 1;
+            self.changed.notify_all();
+            let (mut state, timeout) = self
+                .changed
+                .wait_timeout_while(state, std::time::Duration::from_secs(10), |state| {
+                    state.entered < self.width
+                })
+                .unwrap();
+            assert!(!timeout.timed_out(), "independent tasks did not overlap");
+            if self.block && index == 1 {
+                let (next, timeout) = self
+                    .changed
+                    .wait_timeout_while(state, std::time::Duration::from_secs(10), |state| {
+                        !state.blocked
+                    })
+                    .unwrap();
+                assert!(!timeout.timed_out(), "sibling never blocked");
+                state = next;
+            }
+            drop(state);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            if !(self.block && index == 0) {
+                let file = if self.conflict {
+                    "base.txt".into()
+                } else {
+                    format!("file-{index}.txt")
+                };
+                std::fs::write(cwd.join(file), format!("task {index}\n")).unwrap();
+            }
+            self.state.lock().unwrap().active -= 1;
+            Ok(if self.block && index == 0 {
+                "".into()
+            } else {
+                "output".into()
+            })
+        }
+
+        fn check(&self, _: &CheckCommand, cwd: &Path) -> Result<(bool, String), String> {
+            assert_eq!(cwd, self.root);
+            self.state.lock().unwrap().checks += 1;
+            Ok((true, "checked in root".into()))
+        }
+
+        fn stopped(&self) -> bool {
+            false
+        }
+
+        fn emit(&self, event: &TaskEvent) -> Result<(), String> {
+            let mut state = self.state.lock().unwrap();
+            if event.status == "done" {
+                state.done.insert(event.task_id.clone());
+            }
+            if event.status == "blocked" {
+                state.blocked = true;
+            }
+            self.changed.notify_all();
+            Ok(())
+        }
+    }
+
+    fn parallel_case(count: usize, git: bool, width: usize, block: bool, conflict: bool) {
+        use crate::git::tests::{directory, repo};
+        let root = directory("parallel-root");
+        let data = directory("parallel-data");
+        if git {
+            repo(&root);
+        }
+        let mut conn = connection("draft");
+        let mut plan: Plan =
+            serde_json::from_str(include_str!("../../tests/scheduler/captain-plan.json")).unwrap();
+        let template = serde_json::to_string(&plan.tasks[0]).unwrap();
+        plan.tasks.clear();
+        let dependent = count == 3;
+        for i in 0..count {
+            let mut task: plans::Task = serde_json::from_str(&template).unwrap();
+            task.id = format!("t{i}");
+            task.title = format!("T{i}");
+            task.role_id = "debugger".into();
+            task.depends_on = if dependent && i == 2 {
+                if block {
+                    vec!["t1".into()]
+                } else {
+                    vec!["t0".into(), "t1".into()]
+                }
+            } else {
+                vec![]
+            };
+            task.input_artifacts.clear();
+            task.output_artifacts = vec!["output.md".into()];
+            task.check_command = Some(CheckCommand {
+                program: "fake".into(),
+                args: vec![],
+            });
+            plan.tasks.push(task);
+        }
+        conn.execute(
+            "UPDATE plans SET plan_json=?1",
+            [serde_json::to_string(&plan).unwrap()],
+        )
+        .unwrap();
+        let plan = prepare(&mut conn, "camp", "plan").unwrap();
+        let conn = Mutex::new(conn);
+        let runner = ParallelRunner {
+            state: Mutex::default(),
+            changed: std::sync::Condvar::new(),
+            width,
+            root: root.clone(),
+            isolated: git,
+            block,
+            conflict,
+            dependent,
+        };
+        Execution {
+            conn: &conn,
+            root: &data.join("artifacts"),
+            cwd: &root,
+            worktrees: &data.join("worktrees"),
+            camp: "camp",
+            id: "plan",
+            plan: &plan,
+            runner: &runner,
+        }
+        .execute()
+        .unwrap();
+        let conn = conn.into_inner().unwrap();
+        let recorded = runner.state.lock().unwrap();
+        assert_eq!(recorded.peak, width);
+        for path in &recorded.paths {
+            if git {
+                assert!(path.starts_with(data.join("worktrees")));
+                assert!(!path.exists());
+            }
+        }
+        if block {
+            assert_eq!(state(&conn, "t0").0, "blocked");
+            assert_eq!(state(&conn, "t1").0, "done");
+            assert_eq!(state(&conn, "t2").0, "pending");
+            assert!(!recorded.started.contains(&2));
+        } else if conflict {
+            let states: Vec<_> = (0..2).map(|i| state(&conn, &format!("t{i}")).0).collect();
+            assert_eq!(states.iter().filter(|s| s.as_str() == "done").count(), 1);
+            assert_eq!(states.iter().filter(|s| s.as_str() == "blocked").count(), 1);
+            let blocked = states.iter().position(|s| s == "blocked").unwrap();
+            let patch = data
+                .join("artifacts")
+                .join("camp")
+                .join(format!("plan-t{blocked}"))
+                .join("changes.diff");
+            assert!(std::fs::read_to_string(patch).unwrap().contains("base.txt"));
+            let message: String = conn
+                .query_row(
+                    "SELECT content FROM messages WHERE task_id=?1",
+                    [format!("plan-t{blocked}")],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(message.contains("无法把改动并入大营"));
+        } else {
+            for i in 0..count {
+                assert_eq!(state(&conn, &format!("t{i}")).0, "done");
+                assert_eq!(
+                    std::fs::read_to_string(root.join(format!("file-{i}.txt"))).unwrap(),
+                    format!("task {i}\n")
+                );
+            }
+            assert_eq!(recorded.checks, count);
+        }
+        drop(recorded);
+        crate::git::tests::cleanup(&root);
+        crate::git::tests::cleanup(&data);
+    }
+
+    #[test]
+    fn isolated_reworks_rollback_and_preserve_worktree_changes() {
+        for mode in ["check", "review", "error", "stop", "revert"] {
+            let root = crate::git::tests::directory("rework-root");
+            let data = crate::git::tests::directory("rework-data");
+            crate::git::tests::repo(&root);
+            let mut conn = connection("draft");
+            let mut plan: Plan =
+                serde_json::from_str(include_str!("../../tests/scheduler/captain-plan.json"))
+                    .unwrap();
+            plan.tasks.truncate(1);
+            let task = &mut plan.tasks[0];
+            task.id = "single".into();
+            task.depends_on.clear();
+            task.input_artifacts.clear();
+            task.role_id = "debugger".into();
+            task.check_command = Some(CheckCommand {
+                program: "fake".into(),
+                args: vec![],
+            });
+            conn.execute(
+                "UPDATE plans SET plan_json=?1",
+                [serde_json::to_string(&plan).unwrap()],
+            )
+            .unwrap();
+            let plan = prepare(&mut conn, "camp", "plan").unwrap();
+            let conn = Mutex::new(conn);
+            let runner = ReworkRunner {
+                root: &root,
+                mode,
+                attempts: Mutex::new(0),
+                stopped: AtomicBool::new(false),
+            };
+            let result = Execution {
+                conn: &conn,
+                root: &data.join("artifacts"),
+                cwd: &root,
+                worktrees: &data.join("worktrees"),
+                camp: "camp",
+                id: "plan",
+                plan: &plan,
+                runner: &runner,
+            }
+            .execute();
+            assert_eq!(result.is_err(), mode == "error");
+            let expected = match mode {
+                "error" => "failed",
+                "stop" => "pending",
+                "revert" => "blocked",
+                _ => "done",
+            };
+            assert_eq!(state(&conn.lock().unwrap(), "single").0, expected);
+            let content = std::fs::read_to_string(root.join("base.txt")).unwrap();
+            assert_eq!(
+                content,
+                match mode {
+                    "error" | "stop" => "original\n",
+                    "revert" => "external edit\n",
+                    _ => "attempt 2\n",
+                }
+            );
+            assert!(
+                data.join("artifacts/camp/plan-single/changes.diff")
+                    .is_file()
+            );
+            assert!(!data.join("worktrees/camp/plan-single").exists());
+            crate::git::tests::cleanup(&root);
+            crate::git::tests::cleanup(&data);
+        }
+    }
+
+    struct ReworkRunner<'a> {
+        root: &'a Path,
+        mode: &'a str,
+        attempts: Mutex<u32>,
+        stopped: AtomicBool,
+    }
+
+    impl Runner for ReworkRunner<'_> {
+        fn run(&self, role: &str, _: &str, cwd: &Path) -> Result<String, String> {
+            let mut attempts = self.attempts.lock().unwrap();
+            if role == "reviewer" {
+                let verdict = if self.mode == "review" && *attempts == 1 {
+                    "reject"
+                } else {
+                    "approve"
+                };
+                return Ok(format!(r#"{{"verdict":"{verdict}","reason":"review"}}"#));
+            }
+            assert_eq!(
+                std::fs::read_to_string(self.root.join("base.txt")).unwrap(),
+                "original\n"
+            );
+            if *attempts > 0 {
+                assert_eq!(
+                    std::fs::read_to_string(cwd.join("base.txt")).unwrap(),
+                    format!("attempt {}\n", *attempts)
+                );
+            }
+            *attempts += 1;
+            std::fs::write(cwd.join("base.txt"), format!("attempt {}\n", *attempts)).unwrap();
+            Ok("output".into())
+        }
+        fn check(&self, _: &CheckCommand, cwd: &Path) -> Result<(bool, String), String> {
+            assert_eq!(cwd, self.root);
+            assert_eq!(
+                std::fs::read_to_string(cwd.join("base.txt")).unwrap(),
+                format!("attempt {}\n", *self.attempts.lock().unwrap())
+            );
+            match self.mode {
+                "error" => Err("check error".into()),
+                "stop" => {
+                    self.stopped.store(true, Ordering::SeqCst);
+                    Ok((true, String::new()))
+                }
+                "revert" => {
+                    std::fs::write(cwd.join("base.txt"), "external edit\n").unwrap();
+                    Ok((false, "check failed".into()))
+                }
+                "check" if *self.attempts.lock().unwrap() == 1 => {
+                    Ok((false, "check failed".into()))
+                }
+                _ => Ok((true, "check passed".into())),
+            }
+        }
+        fn stopped(&self) -> bool {
+            self.stopped.load(Ordering::SeqCst)
+        }
+        fn emit(&self, _: &TaskEvent) -> Result<(), String> {
+            Ok(())
         }
     }
 

@@ -1,7 +1,11 @@
-use std::process::Child;
 use std::sync::{
     Mutex, TryLockError,
     atomic::{AtomicU64, Ordering},
+};
+use std::{
+    collections::HashMap,
+    process::Child,
+    thread::{self, ThreadId},
 };
 
 use rusqlite::Connection;
@@ -32,7 +36,7 @@ static NEXT_RUN_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Default)]
 pub(crate) struct RunSlot {
     active: Mutex<()>,
-    pub child: Mutex<Option<Child>>,
+    pub child: Mutex<HashMap<ThreadId, Child>>,
     stopped: std::sync::atomic::AtomicBool,
 }
 
@@ -55,7 +59,7 @@ impl RunSlot {
         if self.stopped.load(Ordering::SeqCst) {
             let _ = process.kill();
         }
-        *child = Some(process);
+        child.insert(thread::current().id(), process);
         Ok(())
     }
 
@@ -64,12 +68,12 @@ impl RunSlot {
             {
                 let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
                 if let Some(status) = child
-                    .as_mut()
+                    .get_mut(&thread::current().id())
                     .ok_or("角色进程不存在")?
                     .try_wait()
                     .map_err(|e| e.to_string())?
                 {
-                    child.take();
+                    child.remove(&thread::current().id());
                     return Ok(status);
                 }
             }
@@ -82,20 +86,27 @@ impl RunSlot {
         if self.active.try_lock().is_err() {
             self.stopped.store(true, Ordering::SeqCst);
         }
-        if let Some(child) = child.as_mut()
-            && child.try_wait().map_err(|e| e.to_string())?.is_none()
-        {
-            child.kill().map_err(|e| format!("无法停止角色：{e}"))?;
-            self.stopped.store(true, Ordering::SeqCst);
+        let mut error = None;
+        for child in child.values_mut() {
+            match child.try_wait() {
+                Ok(Some(_)) => (),
+                Ok(None) => {
+                    self.stopped.store(true, Ordering::SeqCst);
+                    if let Err(e) = child.kill() {
+                        error = Some(format!("无法停止角色：{e}"));
+                    }
+                }
+                Err(e) => error = Some(e.to_string()),
+            }
         }
-        Ok(())
+        error.map_or(Ok(()), Err)
     }
 
     pub fn terminate(&self) {
-        if let Ok(mut child) = self.child.lock()
-            && let Some(child) = child.as_mut()
-        {
-            let _ = child.kill();
+        if let Ok(mut children) = self.child.lock() {
+            for child in children.values_mut() {
+                let _ = child.kill();
+            }
         }
     }
 }
@@ -109,6 +120,43 @@ mod tests {
         let slot = RunSlot::default();
         slot.stop().unwrap();
         assert!(!slot.stopped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn stop_kills_children_on_two_threads() {
+        let slot = RunSlot::default();
+        let _active = slot.acquire().unwrap();
+        let ready = std::sync::Barrier::new(3);
+        let stopped = std::sync::Barrier::new(3);
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                let slot = &slot;
+                let ready = &ready;
+                let stopped = &stopped;
+                scope.spawn(move || {
+                    #[cfg(unix)]
+                    let child = std::process::Command::new("sleep")
+                        .arg("30")
+                        .spawn()
+                        .unwrap();
+                    #[cfg(windows)]
+                    let child = std::process::Command::new("ping")
+                        .args(["-n", "30", "127.0.0.1"])
+                        .stdout(std::process::Stdio::null())
+                        .spawn()
+                        .unwrap();
+                    slot.attach(child).unwrap();
+                    ready.wait();
+                    stopped.wait();
+                    assert!(!slot.wait().unwrap().success());
+                });
+            }
+            ready.wait();
+            assert_eq!(slot.child.lock().unwrap().len(), 2);
+            slot.stop().unwrap();
+            stopped.wait();
+        });
+        assert!(slot.child.lock().unwrap().is_empty());
     }
 
     #[cfg(unix)]
@@ -132,7 +180,7 @@ mod tests {
             }
             assert!(!slot.wait().unwrap().success());
             assert!(slot.stopped.load(Ordering::SeqCst));
-            assert!(slot.child.lock().unwrap().is_none());
+            assert!(slot.child.lock().unwrap().is_empty());
         }
     }
 }
