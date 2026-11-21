@@ -229,8 +229,8 @@ export function CampView() {
         </div></div>
         <RoleRoster onOpen={openCard} />
       </div>
-      {camp && <TaskPanel key={camp.id} campId={camp.id} ready={listening} />}
-      {camp && <CouncilPanel key={camp.id} campId={camp.id} ready={listening} onPlan={() => setWallOpen(true)} />}
+      {camp && <TaskPanel key={`task-${camp.id}`} campId={camp.id} ready={listening} />}
+      {camp && <CouncilPanel key={`council-${camp.id}`} campId={camp.id} ready={listening} onPlan={() => setWallOpen(true)} />}
       {camp && <div><PixelButton onClick={() => setWallOpen(true)}>{theme.wall.title}</PixelButton></div>}
       <PixelDialog open={wallOpen} title={theme.wall.title} closeLabel={theme.wall.close} onClose={() => setWallOpen(false)}>
         {wallOpen && camp && <TaskBoard key={camp.id} campId={camp.id} />}
