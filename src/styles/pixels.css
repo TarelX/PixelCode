@@ -40,6 +40,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ui-accent); out
 .run-bubble header { display: flex; align-items: center; justify-content: space-between; color: var(--ui-accent); }
 .run-bubble pre { min-height: 0; flex-shrink: 1; max-height: 76px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 5px 0; font: 11px/1.5 ui-monospace, monospace; }
 .run-bubble small { color: var(--ui-muted); overflow-wrap: anywhere; }
+.run-artifact { display: grid; gap: 4px; min-height: 0; overflow: auto; }
+.run-artifact small, .artifact-location { overflow-wrap: anywhere; }
+.run-bubble .artifact-content { max-height: 55vh; font-size: 13px; white-space: pre-wrap; }
 .run-bubble > p { max-height: 54px; overflow: auto; }
 .run-bubble--failed { border-color: var(--ui-error); }
 .run-bubble--failed strong { color: var(--ui-error); }

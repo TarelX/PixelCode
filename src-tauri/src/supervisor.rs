@@ -10,7 +10,7 @@ use tauri::{Emitter, Manager, WebviewWindow};
 
 use crate::{
     adapters::{claude_code, codex},
-    camps, roles,
+    artifacts, camps, roles,
 };
 
 const ROLE_RUN_EVENT: &str = "role-run";
@@ -130,6 +130,8 @@ pub(crate) enum RunUpdate {
 #[derive(Clone, Serialize)]
 struct RoleRunEvent<'a> {
     run_id: u64,
+    task_id: &'a str,
+    artifact: Option<artifacts::Artifact>,
     camp_id: &'a str,
     role_id: &'a str,
     #[serde(flatten)]
@@ -163,13 +165,25 @@ pub async fn start_role_run(
             (cwd, cli, model, system_prompt, permissions)
         };
         let run_id = NEXT_RUN_ID.fetch_add(1, Ordering::Relaxed);
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("无法读取系统时间：{e}"))?
+            .as_millis();
+        let task_id = format!("run-{millis}-{run_id}");
+        let output = std::cell::RefCell::new(String::new());
+        let artifact = std::cell::RefCell::new(None);
         let emit = |update| {
+            if let RunUpdate::Text { ref text } = update {
+                output.borrow_mut().push_str(text);
+            }
             window
                 .emit_to(
                     window.label(),
                     ROLE_RUN_EVENT,
                     RoleRunEvent {
                         run_id,
+                        task_id: &task_id,
+                        artifact: artifact.borrow().clone(),
                         camp_id: &camp_id,
                         role_id: &role_id,
                         update,
@@ -192,6 +206,21 @@ pub async fn start_role_run(
         if state.stopped.load(Ordering::SeqCst) {
             return emit(RunUpdate::Stopped);
         }
+        let result = result.and_then(|()| {
+            let connection = window.state::<Mutex<Connection>>();
+            let connection = connection.lock().map_err(|_| "无法访问产物数据库")?;
+            let root = window.state::<artifacts::ArtifactRoot>();
+            *artifact.borrow_mut() = Some(artifacts::write_artifact(
+                &connection,
+                &root.0,
+                &camp_id,
+                &task_id,
+                "report",
+                std::path::Path::new("output.md"),
+                &output.borrow(),
+            )?);
+            Ok::<(), String>(())
+        });
         match result {
             Ok(()) => emit(RunUpdate::Completed),
             Err(message) => {

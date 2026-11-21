@@ -1,4 +1,5 @@
 mod adapters;
+mod artifacts;
 mod camps;
 mod db;
 mod git;
@@ -23,11 +24,14 @@ pub fn run() {
             roles::save_role,
             roles::delete_role,
             supervisor::start_role_run,
+            artifacts::read_artifact,
+            artifacts::list_artifacts,
             supervisor::stop_role_run
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let connection = db::open(&data_dir)?;
+            app.manage(artifacts::ArtifactRoot(data_dir.join("artifacts")));
             app.manage(Mutex::new(connection));
             app.manage(supervisor::RunSlot::default());
             Ok(())
