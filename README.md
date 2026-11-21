@@ -51,6 +51,14 @@ fixture 中已登录输出为合成样本，未登录格式已在本机验证。
 `src/camp/sprites.ts` 的 `loadGenerals()` 生成 `GeneralSprite`（脚底锚点、最近邻），
 `placeGenerals()` 按角色 id 放到驻地坐标；状态到动画的映射在 `src/camp/animations.ts`（规格 §5.2）。
 
+## 原创像素场景与界面
+
+`themes/three-kingdoms/tiles/` 的桃园和军营均为本仓库原创像素画（MIT），
+由 `python3 tools/generate_scenery.py`（需要 Pillow）可重复生成。
+军营保留 320×180 逻辑分辨率与整数倍最近邻缩放；场景路径和文案由主题配置提供。
+界面布局参考 [MonoCode](https://www.usemono.dev/) 的清晰分区与
+[Godly](https://godly.website/) 的留白和信息层级；未复制任何第三方代码或素材。
+
 ## English
 
 PixelCode is a local desktop app that turns your already-installed coding agent CLIs (Claude Code, Codex) into a pixel-art team of Three Kingdoms generals, working in a pixel-art military camp. It does not sell tokens, ship models, or touch your API keys. See [docs/PIXELCODE_SPEC.md](docs/PIXELCODE_SPEC.md) (Chinese). Status: early skeleton.

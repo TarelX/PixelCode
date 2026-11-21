@@ -2,6 +2,7 @@
   "width": 320,
   "height": 180,
   "tileSize": 16,
+  "background": "camp.png",
   "groundColor": "#4c8f3a",
   "zones": [
     { "id": "hq", "x": 8, "y": 1, "w": 4, "h": 2, "color": "#c44b3a", "role": "captain" },

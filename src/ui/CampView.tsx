@@ -6,6 +6,7 @@ import { zh } from "../i18n/zh";
 import { drawCamp, loadCampLayout } from "../camp/tilemap";
 import { loadGenerals, placeGenerals } from "../camp/sprites";
 import { useRoster } from "../camp/roster";
+import theme from "../../themes/three-kingdoms/ui.json";
 
 export function CampView() {
   const camp = useAppStore((s) => s.camp);
@@ -53,7 +54,13 @@ export function CampView() {
           app.destroy(true, { children: true });
           return;
         }
-        app.stage.addChild(drawCamp(layout));
+        const scenery = await drawCamp(layout);
+        if (cancelled) {
+          scenery.destroy({ children: true });
+          app.destroy(true, { children: true });
+          return;
+        }
+        app.stage.addChild(scenery);
         host.appendChild(app.canvas);
         ready = true;
         resize();
@@ -91,11 +98,10 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
-      <h1>{zh.campTitle}</h1>
-      <h2>{camp?.name}</h2>
-      <p>{camp?.root_path}</p>
+      <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || zh.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span></div>
       {(roleError || error) && <p role="alert">{roleError || error}</p>}
-      <div className="camp-canvas" ref={hostRef} />
+      <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef} /></div>
+      <p className="camp-caption">{theme.campMapHint}</p>
     </section>
   );
 }

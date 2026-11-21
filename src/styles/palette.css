@@ -9,8 +9,19 @@
   --state-waiting: #3d9b4a;
   --state-done: #3a6fbf;
   --state-error: #c43b3b;
-  --text-light: #f8f0dc;
-  --text-dark: #2b1b0e;
-  --ui-wood: #48301f;
-  --ui-link: #743a29;
+  --text-light: #ecebe2;
+  --text-dark: #181c1b;
+  --ui-wood: #202522;
+  --ui-link: #e8a28a;
+  --ui-bg: #181c1b;
+  --ui-sidebar: #141816;
+  --ui-surface: #202522;
+  --ui-raised: #272e29;
+  --ui-border: #343e36;
+  --ui-muted: #a0aaa0;
+  --ui-accent: #da795c;
+  --ui-accent-hover: #ee967b;
+  --ui-success: #a1b98b;
+  --ui-warning: #d9b66e;
+  --ui-error: #ef9b8d;
 }

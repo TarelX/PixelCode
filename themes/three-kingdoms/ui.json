@@ -1,0 +1,18 @@
+{
+  "brandTagline": "像素之间，大有可为",
+  "welcomeEyebrow": "YOUR NEXT CAMPAIGN STARTS HERE",
+  "welcomeTitle": ["一方天地，", "一队名将。"],
+  "welcomeDescription": "打开一个项目，让你的像素团队在此集结。",
+  "openHint": "选择本地文件夹，开启你的大营",
+  "emptyHint": "你的下一个作品，从一个文件夹开始。",
+  "enterCamp": "进入大营",
+  "orchardAlt": "原创像素桃园：桃树、水塘与等待出发的营门",
+  "orchardCaption": "桃园 · 万事皆有起点",
+  "localHint": "使用已安装的 Claude Code / Codex，不托管模型，不读取 API Key。",
+  "settingsTitle": "设置 / 编码工具",
+  "campEyebrow": "CAMP OVERVIEW",
+  "campDescription": "名将已在各自驻地集结。",
+  "campLegend": "驻地待命",
+  "campMapLabel": "军营全景",
+  "campMapHint": "原创像素军营 · 本地项目工作空间"
+}
