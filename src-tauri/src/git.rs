@@ -1,10 +1,36 @@
+#[cfg(windows)]
+use std::path::{Component, Prefix};
 use std::{
+    borrow::Cow,
     fs,
     io::Write,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::atomic::{AtomicU64, Ordering},
 };
+
+fn git_path(path: &Path) -> Cow<'_, Path> {
+    #[cfg(windows)]
+    {
+        let mut components = path.components();
+        if let Some(Component::Prefix(prefix)) = components.next() {
+            let mut normalized = match prefix.kind() {
+                Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:", char::from(drive))),
+                Prefix::VerbatimUNC(server, share) => {
+                    let mut prefix = std::ffi::OsString::from(r"\\");
+                    prefix.push(server);
+                    prefix.push(r"\");
+                    prefix.push(share);
+                    PathBuf::from(prefix)
+                }
+                _ => return Cow::Borrowed(path),
+            };
+            normalized.extend(components);
+            return Cow::Owned(normalized);
+        }
+    }
+    Cow::Borrowed(path)
+}
 
 pub(crate) struct GitService {
     root: PathBuf,
@@ -71,19 +97,19 @@ impl GitService {
             if let Some(head) = &head {
                 output(
                     command(&self.root)
-                        .env("GIT_INDEX_FILE", &index)
+                        .env("GIT_INDEX_FILE", git_path(&index).as_os_str())
                         .arg("read-tree")
                         .arg(String::from_utf8_lossy(head).trim()),
                 )?;
             }
             output(
                 command(&self.root)
-                    .env("GIT_INDEX_FILE", &index)
+                    .env("GIT_INDEX_FILE", git_path(&index).as_os_str())
                     .args(["add", "-A"]),
             )?;
             let tree = output(
                 command(&self.root)
-                    .env("GIT_INDEX_FILE", &index)
+                    .env("GIT_INDEX_FILE", git_path(&index).as_os_str())
                     .arg("write-tree"),
             )?;
             let mut commit = command(&self.root);
@@ -106,7 +132,7 @@ impl GitService {
         output(
             command(&self.root)
                 .args(["worktree", "add", "--detach"])
-                .arg(&path)
+                .arg(git_path(&path).as_os_str())
                 .arg(&snapshot),
         )?;
         Ok(Worktree {
@@ -147,6 +173,27 @@ impl GitService {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn git_paths_preserve_ordinary_paths() {
+        for path in ["relative", "目录 with spaces"] {
+            assert_eq!(git_path(Path::new(path)), Path::new(path));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn git_paths_remove_windows_verbatim_prefixes() {
+        for (verbatim, ordinary) in [
+            (
+                r"\\?\D:\大营 with spaces\index",
+                r"D:\大营 with spaces\index",
+            ),
+            (r"\\?\UNC\server\share\index", r"\\server\share\index"),
+        ] {
+            assert_eq!(git_path(Path::new(verbatim)), Path::new(ordinary));
+        }
+    }
 
     pub fn directory(label: &str) -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -274,7 +321,7 @@ impl Drop for Worktree {
         let _ = output(
             command(&self.root)
                 .args(["worktree", "remove", "--force"])
-                .arg(&self.path),
+                .arg(git_path(&self.path).as_os_str()),
         );
         let _ = output(command(&self.root).args(["worktree", "prune"]));
     }
