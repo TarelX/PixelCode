@@ -126,6 +126,25 @@ struct Review {
     reason: String,
 }
 
+fn parse_review(text: &str) -> Option<Review> {
+    text.lines()
+        .rev()
+        .find_map(|line| {
+            let line = line.trim();
+            let line = line
+                .strip_prefix("```json")
+                .or_else(|| line.strip_prefix("```"))
+                .unwrap_or(line)
+                .trim();
+            let line = line.strip_suffix("```").unwrap_or(line).trim();
+            serde_json::from_str::<Review>(line).ok()
+        })
+        .filter(|review| {
+            matches!(review.verdict.as_str(), "approve" | "reject")
+                && !review.reason.trim().is_empty()
+        })
+}
+
 fn execute(
     conn: &Connection,
     root: &Path,
@@ -260,10 +279,7 @@ fn execute(
                         Path::new("review.md"),
                         &text,
                     )?;
-                    let review = serde_json::from_str::<Review>(&text).ok().filter(|r| {
-                        matches!(r.verdict.as_str(), "approve" | "reject")
-                            && !r.reason.trim().is_empty()
-                    });
+                    let review = parse_review(&text);
                     if !review.as_ref().is_some_and(|r| r.verdict == "approve") {
                         event.review_rounds += 1;
                         feedback = format!(
@@ -283,7 +299,7 @@ fn execute(
                 return Ok(Some(()));
             }
         })();
-        if runner.stopped() {
+        if runner.stopped() && !matches!(result, Ok(Some(()))) {
             status(
                 conn,
                 runner,
@@ -400,6 +416,8 @@ pub async fn start_plan_execution(
             .map_err(|e| format!("无法访问应用数据目录：{e}"))?;
         let mut conn =
             crate::db::open(&data_dir).map_err(|e| format!("无法访问大营数据库：{e}"))?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(db_error)?;
         let cwd = camps::run_root(&conn, &camp_id)?;
         let root = window.state::<artifacts::ArtifactRoot>();
         let plan = prepare(&mut conn, &camp_id, &plan_id)?;
@@ -436,6 +454,7 @@ mod tests {
         error: bool,
         stop: bool,
         invalid_review: bool,
+        stop_on_done: bool,
     }
     impl Runner for Fake {
         fn run(&mut self, role: &str, prompt: &str) -> Result<String, String> {
@@ -453,9 +472,10 @@ mod tests {
                 } else {
                     "approve"
                 };
-                return Ok(
-                    serde_json::json!({"verdict": verdict, "reason": "审查说明"}).to_string(),
-                );
+                return Ok(format!(
+                    "审查已完成。\n```json\n{}\n```",
+                    serde_json::json!({"verdict": verdict, "reason": "审查说明"})
+                ));
             }
             if role == "backend" {
                 assert!(prompt.contains("输入产物 repro.md：\n角色输出"));
@@ -468,7 +488,13 @@ mod tests {
             Ok((passed, "检查日志".into()))
         }
         fn stopped(&self) -> bool {
-            self.stop && !self.runs.is_empty()
+            (self.stop && !self.runs.is_empty())
+                || (self.stop_on_done
+                    && self
+                        .events
+                        .borrow()
+                        .iter()
+                        .any(|event| event.status == "done"))
         }
         fn emit(&self, event: &TaskEvent) -> Result<(), String> {
             self.events.borrow_mut().push(event.clone());
@@ -509,6 +535,46 @@ mod tests {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn review_accepts_last_json_line_after_prose_and_fences() {
+        let approve = r#"{"verdict":"approve","reason":"通过"}"#;
+        let reject = r#"{"verdict":"reject","reason":"需要修改"}"#;
+        for text in [
+            format!("审查说明\n  {approve}  "),
+            format!("审查说明\n```json\n{approve}\n```"),
+            format!("审查说明\n```json {approve}```"),
+        ] {
+            assert_eq!(parse_review(&text).unwrap().verdict, "approve");
+        }
+        assert_eq!(
+            parse_review(&format!("{approve}\n说明\n{reject}"))
+                .unwrap()
+                .verdict,
+            "reject"
+        );
+        for text in ["", "只有说明", r#"{"verdict":"approve","reason":""}"#] {
+            assert!(parse_review(text).is_none());
+        }
+    }
+
+    #[test]
+    fn stop_after_completion_preserves_done_and_leaves_next_pending() {
+        let mut fake = Fake {
+            stop_on_done: true,
+            ..Fake::default()
+        };
+        let conn = run(&mut fake);
+        assert_eq!(state(&conn, "reproduce").0, "done");
+        assert_eq!(state(&conn, "fix").0, "pending");
+        assert!(
+            !fake
+                .events
+                .borrow()
+                .iter()
+                .any(|event| event.status == "pending" && event.message.is_some())
+        );
     }
 
     #[test]
