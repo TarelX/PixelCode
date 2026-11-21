@@ -41,6 +41,22 @@ fixture 中已登录输出为合成样本，未登录格式已在本机验证。
 新建任务目前仍为空占位；规格要求的无可用 CLI 时拦截任务应在实现新建任务时接入，
 不得仅凭 `version` 或有 `error` 的结果放行。
 
+## Claude Code 单角色运行（阶段 B · 任务 3）
+
+Rust 命令 `start_role_run(campId, roleId, loadoutIndex, prompt)` 使用已保存的大营目录、
+该大营生效的角色配置和选中的 Claude Code 武器槽。一次只运行一个角色；调用在运行结束时返回，
+应在调用前监听当前窗口的 `role-run` 事件。事件包含 `run_id / camp_id / role_id / type`；
+`type` 为 `started`、`text`（含增量 `text`）、`tool`（含 `name`）、
+`completed` 或 `failed`（含 `message`）。启动前校验错误直接由命令返回。
+
+按 Claude Code 2.1.330 的 `--help`，使用 `claude -p --output-format stream-json --verbose
+--include-partial-messages`，任务内容走 stdin，人设和技能走 `--append-system-prompt`。
+`--tools` 限定内置工具，角色允许/禁止规则走 `--allowedTools` / `--disallowedTools`。
+本阶段没有审批界面，使用 `--permission-mode dontAsk --permission-prompts none`，
+不启用交互式审批或 `--permission-prompt-tool`。命令继承用户的 CLI 登录状态；
+不加载大营的项目设置或 MCP 配置。仅在信任的大营运行：工具规则不等同于文件系统沙箱，
+允许编辑的角色会直接修改大营目录，工作树、任务 UI 和停止操作尚未接入。
+
 ## 名将占位精灵（阶段 A · 任务 5）
 
 `assets/sprites/` 下 7 名将精灵均为本仓库原创像素画（随仓库 MIT 授权），由
