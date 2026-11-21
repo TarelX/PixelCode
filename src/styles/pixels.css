@@ -21,19 +21,6 @@ img {
   height: 100%;
 }
 
-button {
-  border: 1px solid var(--outline);
-  border-radius: 0;
-  background: var(--wall);
-  color: var(--text-dark);
-  padding: 6px 16px;
-  cursor: pointer;
-}
-
-button:active {
-  transform: translateY(1px);
-}
-
 .camp-screen {
   height: calc(100% - 36px);
 }

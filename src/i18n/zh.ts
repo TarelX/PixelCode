@@ -7,4 +7,6 @@ export const zh = {
   openError: "无法打开大营：",
   recentError: "无法加载最近的大营：",
   campTitle: "大营",
+  settings: "设置",
+  closeSettings: "关闭设置",
 };
