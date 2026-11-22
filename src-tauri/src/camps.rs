@@ -26,7 +26,7 @@ fn read_camp(row: &rusqlite::Row<'_>) -> rusqlite::Result<Camp> {
 }
 
 fn database_error(error: rusqlite::Error) -> String {
-    format!("无法读取或保存大营：{error}")
+    format!("无法读取或保存基地：{error}")
 }
 
 fn save_camp(connection: &Connection, path: &Path) -> Result<Camp, String> {
@@ -76,15 +76,15 @@ pub(crate) fn run_root(connection: &Connection, camp_id: &str) -> Result<PathBuf
             |row| row.get(0),
         )
         .map_err(|error| match error {
-            rusqlite::Error::QueryReturnedNoRows => "未找到要运行的大营".into(),
+            rusqlite::Error::QueryReturnedNoRows => "未找到要运行的基地".into(),
             error => database_error(error),
         })?;
     let path = Path::new(&stored);
     let root = path
         .canonicalize()
-        .map_err(|error| format!("无法打开大营目录：{error}"))?;
+        .map_err(|error| format!("无法打开基地目录：{error}"))?;
     if root != path || !root.is_dir() {
-        return Err("大营目录已更改，请重新选择大营".into());
+        return Err("基地目录已更改，请重新选择基地".into());
     }
     Ok(root)
 }
@@ -96,7 +96,7 @@ pub fn open_camp(
 ) -> Result<Camp, String> {
     let connection = connection
         .lock()
-        .map_err(|_| "无法访问大营数据库".to_string())?;
+        .map_err(|_| "无法访问基地数据库".to_string())?;
     save_camp(&connection, Path::new(&path))
 }
 
@@ -106,7 +106,7 @@ pub fn list_recent_camps(
 ) -> Result<Vec<Camp>, String> {
     let connection = connection
         .lock()
-        .map_err(|_| "无法访问大营数据库".to_string())?;
+        .map_err(|_| "无法访问基地数据库".to_string())?;
     recent_camps(&connection)
 }
 
@@ -203,13 +203,13 @@ mod tests {
         assert!(
             recent_camps(&connection)
                 .unwrap_err()
-                .contains("无法读取或保存大营")
+                .contains("无法读取或保存基地")
         );
         let fixture = Fixture::new();
         assert!(
             save_camp(&connection, &fixture.0)
                 .unwrap_err()
-                .contains("无法读取或保存大营")
+                .contains("无法读取或保存基地")
         );
     }
 }

@@ -51,7 +51,7 @@ pub(crate) fn latest(conn: &Connection, camp_id: &str) -> Result<Option<StoredPl
         },
     )
     .optional()
-    .map_err(|error| format!("无法读取锦囊计划：{error}"))
+    .map_err(|error| format!("无法读取计划卡计划：{error}"))
 }
 
 #[tauri::command]
@@ -71,7 +71,7 @@ fn decide(conn: &Connection, camp: &str, id: &str, from: &str, to: &str) -> Resu
         )
         .map_err(|error| format!("无法更新计划确认状态：{error}"))?;
     if changed != 1 {
-        return Err("计划状态已变更或不属于此大营，请重新打开锦囊墙".into());
+        return Err("计划状态已变更或不属于此基地，请重新打开计划卡墙".into());
     }
     Ok(())
 }
@@ -276,7 +276,7 @@ impl Plan {
                 .tasks
                 .iter_mut()
                 .find(|task| &task.id == id)
-                .ok_or_else(|| format!("计划中未找到锦囊：{id}"))?;
+                .ok_or_else(|| format!("计划中未找到计划卡：{id}"))?;
             task.role_id.clone_from(role);
             if !self.recruited_roles.contains(role) {
                 self.recruited_roles.push(role.clone());
@@ -287,7 +287,7 @@ impl Plan {
 
     fn validate(&self, roster: &[PlanningRole]) -> Result<(), String> {
         if self.scenario.trim().is_empty() || self.tasks.is_empty() {
-            return Err("草案必须包含任务类型和至少一张锦囊".into());
+            return Err("草案必须包含任务类型和至少一张计划卡".into());
         }
         let available: HashSet<_> = roster.iter().map(|role| role.id.as_str()).collect();
         let mut recruited = HashSet::new();
@@ -305,11 +305,11 @@ impl Plan {
                     .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
                 || indices.insert(task.id.as_str(), index).is_some()
             {
-                return Err(format!("锦囊 ID 无效或重复：{}", task.id));
+                return Err(format!("计划卡 ID 无效或重复：{}", task.id));
             }
             if !recruited.contains(task.role_id.as_str()) {
                 return Err(format!(
-                    "锦囊 {} 分派给未招募的角色：{}",
+                    "计划卡 {} 分派给未招募的角色：{}",
                     task.id, task.role_id
                 ));
             }
@@ -317,7 +317,7 @@ impl Plan {
                 .iter()
                 .any(|s| s.trim().is_empty())
             {
-                return Err(format!("锦囊 {} 缺少标题、描述或验收标准", task.id));
+                return Err(format!("计划卡 {} 缺少标题、描述或验收标准", task.id));
             }
             for path in task.input_artifacts.iter().chain(&task.output_artifacts) {
                 if path
@@ -326,7 +326,7 @@ impl Plan {
                     || path.contains([':', '\\'])
                     || path.chars().any(char::is_control)
                 {
-                    return Err(format!("锦囊 {} 的产物名称不是安全的相对路径", task.id));
+                    return Err(format!("计划卡 {} 的产物名称不是安全的相对路径", task.id));
                 }
             }
             if let Some(command) = &task.check_command
@@ -334,7 +334,7 @@ impl Plan {
                     || command.program.contains('\0')
                     || command.args.iter().any(|arg| arg.contains('\0')))
             {
-                return Err(format!("锦囊 {} 的检查命令无效", task.id));
+                return Err(format!("计划卡 {} 的检查命令无效", task.id));
             }
         }
 
@@ -345,9 +345,9 @@ impl Plan {
             for id in &task.depends_on {
                 let parent = indices
                     .get(id.as_str())
-                    .ok_or_else(|| format!("锦囊 {} 依赖不存在的锦囊：{id}", task.id))?;
+                    .ok_or_else(|| format!("计划卡 {} 依赖不存在的计划卡：{id}", task.id))?;
                 if !seen.insert(parent) {
-                    return Err(format!("锦囊 {} 的依赖重复：{id}", task.id));
+                    return Err(format!("计划卡 {} 的依赖重复：{id}", task.id));
                 }
                 followers[*parent].push(index);
             }
@@ -362,7 +362,7 @@ impl Plan {
                         == name
                 }) {
                     return Err(format!(
-                        "锦囊 {} 的输入产物 {name} 不是其前置锦囊的首个输出产物",
+                        "计划卡 {} 的输入产物 {name} 不是其前置计划卡的首个输出产物",
                         task.id
                     ));
                 }
@@ -384,7 +384,7 @@ impl Plan {
             }
         }
         if visited != self.tasks.len() {
-            return Err("锦囊草案存在循环依赖".into());
+            return Err("计划卡草案存在循环依赖".into());
         }
         Ok(())
     }
@@ -398,9 +398,9 @@ impl Plan {
         request: &str,
         created_at: i64,
     ) -> Result<artifacts::Artifact, String> {
-        let db_error = |error| format!("无法保存锦囊草案：{error}");
+        let db_error = |error| format!("无法保存计划卡草案：{error}");
         let json =
-            serde_json::to_string_pretty(self).map_err(|e| format!("无法编码锦囊草案：{e}"))?;
+            serde_json::to_string_pretty(self).map_err(|e| format!("无法编码计划卡草案：{e}"))?;
         let transaction = conn.transaction().map_err(db_error)?;
         transaction.execute(
             "INSERT INTO plans (id, camp_id, scenario, user_request, plan_json, status, created_at)

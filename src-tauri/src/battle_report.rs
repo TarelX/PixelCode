@@ -9,7 +9,7 @@ fn statuses(
     end: i64,
 ) -> Result<BTreeMap<String, i64>, String> {
     if end <= start || end - start > 90_000 {
-        return Err("战报日期范围无效".into());
+        return Err("冒险报告日期范围无效".into());
     }
     let mut query = conn
         .prepare(
@@ -49,12 +49,12 @@ pub(crate) fn export_battle_report(path: String, bytes: Vec<u8>) -> Result<(), S
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
     {
-        return Err("战报文件必须使用 .png 扩展名".into());
+        return Err("冒险报告文件必须使用 .png 扩展名".into());
     }
     if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Err("战报数据不是 PNG 图片".into());
+        return Err("冒险报告数据不是 PNG 图片".into());
     }
-    std::fs::write(path, bytes).map_err(|error| format!("无法保存战报：{error}"))
+    std::fs::write(path, bytes).map_err(|error| format!("无法保存冒险报告：{error}"))
 }
 
 #[cfg(test)]

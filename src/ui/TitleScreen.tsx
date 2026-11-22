@@ -7,10 +7,9 @@ import { PixelIcon } from "./components/PixelIcon";
 import { useI18n } from "../i18n";
 import { RoleAvatar } from "./components/RoleAvatar";
 import { parse } from "yaml";
-import names from "../../themes/three-kingdoms/names.yaml?raw";
-import { avatarFiles } from "../camp/sprites";
+import names from "../../themes/pokemon/names.yaml?raw";
 
-const { generals } = parse(names) as { generals: { id: string; name: string; name_en: string }[] };
+const { generals } = parse(names) as { generals: { id: string; name: string; name_en: string; avatar: string }[] };
 
 export function TitleScreen() {
   const { locale, theme } = useI18n();
@@ -48,7 +47,7 @@ export function TitleScreen() {
   return (
     <main className="screen title-screen">
       <div className="welcome-hero">
-        <div className="welcome-team" aria-hidden="true">{generals.map((general, index) => <span key={general.id} title={locale === "en" ? general.name_en : general.name}><RoleAvatar avatar={avatarFiles[index] ?? null} /></span>)}</div>
+        <div className="welcome-team" aria-hidden="true">{generals.map((general) => <span key={general.id} title={locale === "en" ? general.name_en : general.name}><RoleAvatar avatar={general.avatar} /></span>)}</div>
         <div className="welcome-copy"><span className="section-label welcome-eyebrow">{theme.welcomeEyebrow}</span>
           <h1>{theme.welcomeTitle[0]}<br /><span>{theme.welcomeTitle[1]}</span></h1>
           <p>{theme.welcomeDescription}</p>

@@ -76,7 +76,7 @@ pub fn write_artifact(
     content: &str,
 ) -> Result<Artifact, String> {
     if !valid_id(camp_id) || !valid_id(task_id) {
-        return Err("产物所属大营或任务 ID 无效".into());
+        return Err("产物所属基地或任务 ID 无效".into());
     }
     let local = resolve(Path::new(""), relative)?;
     let relative = Path::new(camp_id).join(task_id).join(local);

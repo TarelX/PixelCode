@@ -12,8 +12,8 @@ async function loadModule(path, imports) {
   new Function("require", "exports", ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)((id) => imports[id], result);
   return result;
 }
-const theme = JSON.parse(await load("themes/three-kingdoms/ui.json"));
-const english = JSON.parse(await load("themes/three-kingdoms/ui.en.json"));
+const theme = JSON.parse(await load("themes/pokemon/ui.json"));
+const english = JSON.parse(await load("themes/pokemon/ui.en.json"));
 let storedLocale = "zh-CN";
 const i18n = await loadModule("src/i18n/index.ts", {
   "@tauri-apps/api/core": { invoke: async (command, { locale } = {}) => {
@@ -23,9 +23,9 @@ const i18n = await loadModule("src/i18n/index.ts", {
   } },
   yaml: { parse },
   zustand: { create },
-  "../../themes/three-kingdoms/ui.json": theme,
-  "../../themes/three-kingdoms/ui.en.json": english,
-  "../../themes/three-kingdoms/names.yaml?raw": await load("themes/three-kingdoms/names.yaml"),
+  "../../themes/pokemon/ui.json": theme,
+  "../../themes/pokemon/ui.en.json": english,
+  "../../themes/pokemon/names.yaml?raw": await load("themes/pokemon/names.yaml"),
 });
 const exports = await loadModule("src/ui/battle-report.ts", { "../i18n": i18n });
 const chineseCopy = { locale: "zh-CN", theme };
@@ -40,10 +40,10 @@ test("the UI locale loads and updates through settings, and custom role text is 
   await useLocale.getState().load();
   assert.equal(useLocale.getState().locale, "zh-CN");
 
-  const captain = { id: "captain", source: "preset", name: "诸葛亮", name_en: "Zhuge Liang", title: "队长" };
-  assert.equal(roleName(captain, "en"), "Zhuge Liang");
-  assert.equal(roleTitle(captain, "en"), "The Strategist");
-  assert.equal(roleName({ ...captain, name_en: null }, "en"), "诸葛亮");
+  const captain = { id: "captain", source: "preset", name: "皮卡丘", name_en: "Pikachu", title: "电光队长" };
+  assert.equal(roleName(captain, "en"), "Pikachu");
+  assert.equal(roleTitle(captain, "en"), "Spark Captain");
+  assert.equal(roleName({ ...captain, name_en: null }, "en"), "皮卡丘");
   assert.equal(roleTitle({ ...captain, source: "modified_preset", title: "My captain" }, "en"), "My captain");
 });
 
