@@ -40,10 +40,12 @@ export function TaskPanel({ campId, ready, onConfigure }: { campId: string; read
   const loadout = role?.loadouts[index];
   return <section className="task-panel task-composer">
     <label className="sr-only" htmlFor="task-prompt">{captain ? theme.planPrompt : theme.taskPrompt}</label>
+    <div className="composer-input">
     <textarea id="task-prompt" rows={2} value={prompt} disabled={busy} onChange={(e) => setPrompt(e.target.value)} placeholder={theme.studio.prompt} onKeyDown={(event) => {
       if (!event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229 && event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); submit(); }
     }} />
     <div className="composer-team">{roles.map((item) => <button key={item.id} aria-label={roleName(item, locale)} title={roleName(item, locale)} aria-pressed={item.id === role?.id} disabled={busy} onClick={() => select(item.id)}><RoleAvatar avatar={item.avatar} scale={1} /></button>)}</div>
+    </div>
     <div className="composer-toolbar">
       <ComposerPicker icon="team" label={role ? roleName(role, locale) : theme.studio.role}>
         <strong>{theme.studio.role}</strong>{roles.map((item) => <button key={item.id} disabled={busy} aria-pressed={item.id === role?.id} onClick={() => select(item.id)}><RoleAvatar avatar={item.avatar} scale={1} /><span>{roleName(item, locale)}<small>{theme.roleTypes[item.role_type]}</small></span></button>)}

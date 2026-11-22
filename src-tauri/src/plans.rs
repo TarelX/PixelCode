@@ -5,6 +5,7 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use tauri::Emitter;
 
 use crate::{artifacts, roles::PlanningRole};
 
@@ -78,16 +79,21 @@ fn decide(conn: &Connection, camp: &str, id: &str, from: &str, to: &str) -> Resu
 
 #[tauri::command]
 pub(crate) fn reject_plan(
+    window: tauri::WebviewWindow,
     conn: tauri::State<'_, std::sync::Mutex<Connection>>,
     camp_id: String,
     plan_id: String,
 ) -> Result<(), String> {
     let conn = conn.lock().map_err(|error| error.to_string())?;
-    decide(&conn, &camp_id, &plan_id, "draft", "aborted")
+    decide(&conn, &camp_id, &plan_id, "draft", "aborted")?;
+    drop(conn);
+    let _ = window.emit_to(window.label(), "plan-state", &camp_id);
+    Ok(())
 }
 
 #[tauri::command]
 pub(crate) fn decide_delivery(
+    window: tauri::WebviewWindow,
     conn: tauri::State<'_, std::sync::Mutex<Connection>>,
     camp_id: String,
     plan_id: String,
@@ -100,7 +106,10 @@ pub(crate) fn decide_delivery(
         &plan_id,
         "awaiting_delivery",
         if accepted { "completed" } else { "aborted" },
-    )
+    )?;
+    drop(conn);
+    let _ = window.emit_to(window.label(), "plan-state", &camp_id);
+    Ok(())
 }
 
 #[derive(Deserialize, Serialize)]

@@ -1,4 +1,8 @@
 {
+  "workbench": {
+    "eyebrow": "PROJECT WORKSPACE", "description": "One idea. A whole team to bring it to life.", "agents": "agents", "active": "active", "projects": "WORKSPACE", "localProject": "Local project", "startHint": "A new idea starts here", "yourTeam": "YOUR PIXEL TEAM", "teamTitle": "Different strengths. Shared ambition.", "teamHint": "Planning, design, development and review. All in one workspace.",
+    "steps": [{ "title": "Open a project", "hint": "Connect a local folder" }, { "title": "Give your team a goal", "hint": "Plan together or assign directly" }, { "title": "Bring it to life", "hint": "Follow tasks, review and deliver" }]
+  },
   "scene": {
     "idle": "Idle", "available": "Ready for a task", "draft": "Draft", "handoffs": "Handoffs", "hint": "Real task dependencies · execution stays independent", "empty": "Completed tasks will show their outputs and the next teammate here.", "handing": "Handing off", "to": "Notify", "ready": "Dependencies ready", "waiting": "Waiting for dependencies"
   },

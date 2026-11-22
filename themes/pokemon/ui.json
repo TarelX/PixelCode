@@ -1,4 +1,8 @@
 {
+  "workbench": {
+    "eyebrow": "项目工作台", "description": "从一个想法，到团队协作，再到交付。", "agents": "位 Agent", "active": "运行中", "projects": "工作空间", "localProject": "本地项目", "startHint": "描述目标，开始协作", "yourTeam": "你的像素团队", "teamTitle": "各有所长，一起创造。", "teamHint": "规划、设计、开发与审查，在同一个工作空间里。",
+    "steps": [{ "title": "打开项目", "hint": "连接一个本地文件夹" }, { "title": "告诉团队你的目标", "hint": "由队长规划，或直接分派" }, { "title": "见证想法落地", "hint": "跟进任务、审查产出并交付" }]
+  },
   "scene": {
     "idle": "待命", "available": "等待分派任务", "draft": "待确认", "handoffs": "任务交接", "hint": "跟随真实任务依赖 · 不影响执行", "empty": "任务完成后，依赖产物和接手角色会显示在这里。", "handing": "交接中", "to": "告知", "ready": "依赖已就绪", "waiting": "等待其他依赖"
   },

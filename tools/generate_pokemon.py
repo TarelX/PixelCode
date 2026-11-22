@@ -15,6 +15,7 @@ POKEMON = {25: "pikachu", 376: "metagross", 235: "smeargle", 448: "lucario",
            68: "machamp", 137: "porygon", 65: "alakazam"}
 FRAME_WIDTH, FRAME_HEIGHT = 32, 32
 OUT = Path(__file__).resolve().parents[1] / "assets/sprites"
+AVATAR_OUT = OUT.parent / "avatars"
 
 
 def sheet(raw):
@@ -33,8 +34,22 @@ def sheet(raw):
     return result
 
 
+def avatar(image):
+    frame = image.crop((0, 0, FRAME_WIDTH, FRAME_HEIGHT))
+    bounds = frame.getbbox()
+    if not bounds:
+        raise ValueError("Empty Pokémon avatar")
+    body = frame.crop(bounds)
+    result = Image.new("RGBA", (FRAME_WIDTH, FRAME_HEIGHT))
+    result.paste(body, ((FRAME_WIDTH - body.width) // 2, (FRAME_HEIGHT - body.height) // 2))
+    return result
+
+
 if __name__ == "__main__":
+    AVATAR_OUT.mkdir(exist_ok=True)
     for dex, name in POKEMON.items():
         with urlopen(f"{SOURCE}/images/pixel/{dex}.png", timeout=30) as response:
-            sheet(response.read()).save(OUT / f"{name}.png")
+            image = sheet(response.read())
+            image.save(OUT / f"{name}.png")
+            avatar(image).save(AVATAR_OUT / f"{name}.png")
         print(f"{name}: {FRAME_WIDTH * 4}x{FRAME_HEIGHT}")

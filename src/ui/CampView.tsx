@@ -9,6 +9,7 @@ import { useRoster, type RoleConfig } from "../camp/roster";
 import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
 import { AgentPanel } from "./AgentPanel";
+import { WorkspaceHeading } from "./WorkspaceHeading";
 import { RunFeed } from "./RunFeed";
 import { TaskPanel } from "./TaskPanel";
 import { CouncilPanel } from "./CouncilPanel";
@@ -125,9 +126,7 @@ export function CampView() {
 
     function resize() {
       if (!ready) return;
-      const scale = Math.max(1, Math.floor(Math.min(
-        host.clientWidth / layout.width, host.clientHeight / layout.height,
-      )));
+      const scale = Math.max(1, Math.floor(host.clientWidth / layout.width));
       app.stage.scale.set(scale);
       app.renderer.resize(layout.width * scale, layout.height * scale, resolution);
       app.canvas.style.width = `${layout.width * scale}px`;
@@ -262,6 +261,7 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
+      <WorkspaceHeading plan={plan} />
       <nav className="workbench-tabs" aria-label={theme.workspace.navigation}>
         <button aria-current={tab === "conversation" ? "page" : undefined} onClick={() => setTab("conversation")}><PixelIcon name="chat" />{theme.studio.conversation}</button>
         <button aria-current={tab === "agents" ? "page" : undefined} onClick={() => setTab("agents")}><PixelIcon name="team" />{theme.studio.agents}<span className="tab-tag">{roles.length}</span></button>
@@ -271,14 +271,17 @@ export function CampView() {
       {(roleError || error) && <p role="alert">{roleError ? theme.rosterError + roleError
         : error && theme[error[0]] + (error[1] instanceof MissingAssetError ? theme.missingAsset + error[1].message : String(error[1]))}</p>}
       <div className="workbench-grid"><div className="workbench-center">
+        <div className="workbench-activity" hidden={tab === "tasks" || tab === "council"}>
         <section className="collaboration-scene" hidden={tab !== "agents"}>
           <header><strong>{theme.studio.collaboration}</strong><span className="live-label"><i className="status-dot" />{theme.studio.live}</span><button onClick={() => setSceneOpen(!sceneOpen)}>{sceneOpen ? theme.studio.hideScene : theme.studio.showScene}<PixelIcon name="chevron" /></button></header>
           <div className="camp-map" hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
-            <SceneTasks roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
+            <SceneTasks placement="top" roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
+            <SceneTasks placement="bottom" roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
             <div className="station-overlay">{roles.map((role) => {
               const anchor = anchors[role.id];
               if (!anchor) return null;
-              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ left: anchor.canvas.left + anchor.x, top: anchor.canvas.top + anchor.footY + 24 * anchor.canvas.width / loadCampLayout().width }} onClick={() => select(role.id)} title={roleName(role, locale)}>
+              const top = anchor.canvas.top + Math.min(anchor.footY + 24 * anchor.canvas.width / loadCampLayout().width, anchor.canvas.height - 20);
+              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ left: anchor.canvas.left + anchor.x, top }} onClick={() => select(role.id)} title={roleName(role, locale)}>
                 <span>{roleName(role, locale)}</span><i className={`status-dot run-dot--${runs[role.id]?.status ?? "idle"}`} />
               </button>;
             })}</div>
@@ -286,6 +289,7 @@ export function CampView() {
           {sceneOpen && <SceneHandoffs plan={plan} roles={roles} handoff={handoff} error={sceneError} onPlan={() => setTab("tasks")} />}
         </section>
         <div className="workbench-feed" hidden={tab === "tasks" || tab === "council"}><RunFeed onPlan={() => setTab("tasks")} /></div>
+        </div>
         <div className="workbench-board" hidden={tab !== "tasks"}>{camp && <TaskBoard key={camp.id} campId={camp.id} />}</div>
         <div className="workbench-council" hidden={tab !== "council"}>{camp && <CouncilPanel key={`council-${camp.id}`} campId={camp.id} ready={listening} onPlan={() => setTab("tasks")} />}</div>
         <div className="workbench-composer" hidden={tab === "tasks" || tab === "council"}>{camp && <TaskPanel key={`task-${camp.id}`} campId={camp.id} ready={listening} onConfigure={() => openCard(roles.find((role) => role.id === selectedId) ?? null)} />}</div>

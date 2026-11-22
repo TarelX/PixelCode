@@ -9,6 +9,7 @@ export const FRAME_HEIGHT = 32;
 const SHEET_FRAMES = 4;
 
 const spriteFiles = import.meta.glob<string>("/assets/sprites/*.png", { query: "?url", import: "default", eager: true });
+const portraitFiles = import.meta.glob<string>("/assets/avatars/*.png", { query: "?url", import: "default", eager: true });
 
 export const avatarFiles = Object.keys(spriteFiles)
   .filter((path) => !path.includes("/bubble-")).map((path) => path.split("/").pop()!).sort();
@@ -18,7 +19,7 @@ export function avatarFile(avatar: string | null): string {
 }
 
 export function avatarUrl(avatar: string | null): string {
-  return spriteFiles[`/assets/sprites/${avatarFile(avatar)}`];
+  return portraitFiles[`/assets/avatars/${avatarFile(avatar)}`];
 }
 
 async function loadTexture(file: string): Promise<Texture> {

@@ -3,6 +3,7 @@ import { useRoster } from "../camp/roster";
 import { useRuns } from "../camp/run";
 import { roleName, useI18n } from "../i18n";
 import { PixelIcon } from "./components/PixelIcon";
+import { RoleAvatar } from "./components/RoleAvatar";
 
 export function ProjectSidebar() {
   const { locale, theme } = useI18n();
@@ -17,18 +18,18 @@ export function ProjectSidebar() {
     requestAnimationFrame(() => document.getElementById("task-prompt")?.focus());
   }
   return <aside className="project-sidebar" aria-label={theme.workspace.label}>
-    <header><strong>{theme.appName}</strong><span>⌘</span></header>
+    <header><strong>{theme.workbench.projects}</strong><PixelIcon name="folder" /></header>
     <button className="project-switch" onClick={showTitle} title={theme.studio.openProject}>
       <span className="project-monogram">{(camp?.name || "P").slice(0, 1).toUpperCase()}</span>
-      <strong>{camp?.name || theme.workspace.title}</strong><PixelIcon name="chevron" />
+      <span className="project-switch__name"><strong>{camp?.name || theme.workspace.title}</strong><small>{theme.workbench.localProject}</small></span><PixelIcon name="chevron" />
     </button>
     <p className="project-path" title={camp?.root_path}><PixelIcon name="folder" />{camp?.root_path || theme.studio.chooseFolder}</p>
-    <button className="new-session" onClick={compose}><PixelIcon name="plus" />{theme.studio.newTask}</button>
-    <div className="sidebar-section"><span>{theme.studio.conversations}</span><span title={theme.studio.sessionHint}><PixelIcon name="info" /></span></div>
+    <button className="new-session" onClick={compose}><PixelIcon name="plus" />{theme.studio.newTask}<PixelIcon name="arrow" /></button>
+    <div className="sidebar-section"><span>{theme.studio.conversations}</span><span className="sidebar-count">{screen === "camp" ? Object.keys(runs).filter((id) => roles.some((role) => role.id === id)).length : 0}</span></div>
     <div className="session-list">
-      {camp && screen === "camp" && <button className={`session-item ${!runs[selectedId ?? ""] ? "is-active" : ""}`} onClick={compose}><PixelIcon name="chat" /><span>{theme.studio.newConversation}</span><span>···</span></button>}
+      {camp && screen === "camp" && <button className={`session-item ${!runs[selectedId ?? ""] ? "is-active" : ""}`} onClick={compose}><PixelIcon name="chat" /><span>{theme.studio.newConversation}<small>{theme.workbench.startHint}</small></span></button>}
       {screen === "camp" && Object.entries(runs).filter(([id]) => roles.some((role) => role.id === id)).map(([id, run]) => <button key={id} className={`session-item ${id === selectedId ? "is-active" : ""}`} onClick={() => { if (camp) openCamp(camp); setWorkspaceTab("conversation"); select(id); }}>
-        <PixelIcon name="chat" /><span>{roleName(roles.find((role) => role.id === id)!, locale)}</span><i className={`status-dot run-dot--${run.status}`} />
+        <RoleAvatar avatar={roles.find((role) => role.id === id)!.avatar} scale={1} /><span>{roleName(roles.find((role) => role.id === id)!, locale)}<small>{theme.runStates[run.status]}</small></span><i className={`status-dot run-dot--${run.status}`} />
       </button>)}
       {Object.keys(runs).length === 0 && <p className="sidebar-empty">{theme.studio.noConversations}</p>}
     </div>
