@@ -13,6 +13,7 @@ async function load(path, dependencies = {}) {
 const model = await load("../src/camp/collaboration.ts");
 const { planHandoffs, roleActivity, advanceRoute, handoffRoute } = model;
 const { SceneMotion } = await load("../src/camp/scene-motion.ts", { "./collaboration": model });
+const { layoutSceneLabels } = await load("../src/camp/scene-labels.ts");
 const task = (id, role_id, status, depends_on = []) => ({ id, role_id, title: id, status, depends_on, input_artifacts: ["contract.md"], output_artifacts: ["contract.md"] });
 const plan = (tasks, status = "executing") => ({ id: "plan", status, plan: { tasks } });
 
@@ -92,4 +93,20 @@ test("scene walks on new completed edges once, never replays historical transfer
   reduced.controller.tick(.05, true);
   assert.equal(reduced.controller.active, null);
   assert.equal(reduced.generals[0].x, 48);
+});
+
+test("moving and adjacent labels stay readable and inside the scene", () => {
+  for (const width of [320, 640, 960]) {
+    for (let step = 0; step < 30; step++) {
+      const labels = Array.from({ length: 7 }, (_, i) => ({ id: String(i),
+        left: (i === 4 ? step / 30 : i / 7) * width, top: i < 3 ? 4 : 180, width: Math.min(132, width / 4), height: 40 }));
+      const placed = layoutSceneLabels(labels, width, 360);
+      for (const [i, card] of placed.entries()) {
+        assert.ok(card.left >= 4 && card.left + card.width <= width - 4);
+        assert.ok(card.top >= 4 && card.top + card.height <= 356);
+        for (const other of placed.slice(i + 1)) assert.ok(card.left + card.width <= other.left || other.left + other.width <= card.left
+          || card.top + card.height <= other.top || other.top + other.height <= card.top);
+      }
+    }
+  }
 });

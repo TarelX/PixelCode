@@ -2,6 +2,7 @@ import type { RoleConfig } from "../camp/roster";
 import type { RoleRun } from "../camp/run";
 import type { BubbleAnchor } from "../camp/bubble";
 import { planHandoffs, roleActivity, type Handoff } from "../camp/collaboration";
+import { layoutSceneLabels } from "../camp/scene-labels";
 import type { StoredPlan } from "./plan-layout";
 import { roleName, useI18n } from "../i18n";
 import "../styles/scene.css";
@@ -14,7 +15,17 @@ export function SceneTasks({ roles, runs, plan, anchors, selectedId, handoff, on
   const { locale, theme } = useI18n();
   const copy = theme.scene;
   const statuses: Record<string, string> = { ...theme.wall.statuses, ...theme.runStates, idle: copy.idle, draft: copy.draft };
-  return <div className="scene-tasks">{roles.map((role) => {
+  const canvas = Object.values(anchors)[0]?.canvas;
+  const positions = canvas ? layoutSceneLabels(roles.flatMap((role) => {
+    const anchor = anchors[role.id];
+    if (!anchor) return [];
+    const width = Math.min(132, Math.max(88, anchor.canvas.width / 5.6));
+    return [{ id: role.id, left: anchor.x - width / 2, top: anchor.y - 45, width, height: 40 }];
+  }), canvas.width, canvas.height) : [];
+  return <div className="scene-tasks">{canvas && <svg className="scene-label-links" aria-hidden="true" width={canvas.width} height={canvas.height} style={{ left: canvas.left, top: canvas.top }}>{positions.map((position) => {
+    const anchor = anchors[position.id];
+    return <path key={position.id} d={`M${position.left + position.width / 2} ${position.top + position.height}L${anchor.x} ${anchor.y + 3}`} />;
+  })}</svg>}{roles.map((role) => {
     const anchor = anchors[role.id];
     if (!anchor) return null;
     const activity = roleActivity(role.id, plan, runs[role.id], role.role_type === "reviewer");
@@ -22,10 +33,9 @@ export function SceneTasks({ roles, runs, plan, anchors, selectedId, handoff, on
     const name = roleName(role, locale);
     const status = passing ? copy.handing : statuses[activity.status] ?? activity.status;
     const title = passing ? `${copy.to} ${roleName(roles.find((item) => item.id === handoff.to.role_id) ?? role, locale)}` : activity.title || copy.available;
-    const width = Math.min(132, Math.max(88, anchor.canvas.width / 5.6));
-    const left = anchor.canvas.left + Math.max(4, Math.min(anchor.canvas.width - width - 4, anchor.x - width / 2));
+    const position = positions.find((item) => item.id === role.id)!;
     return <button key={role.id} className={`scene-task ${role.id === selectedId ? "is-selected" : ""}`} data-status={passing ? "handoff" : activity.status}
-      style={{ left, top: anchor.canvas.top + Math.max(4, anchor.y - 45), width }} onClick={() => onSelect(role.id)}
+      style={{ left: anchor.canvas.left + position.left, top: anchor.canvas.top + position.top, width: position.width, height: position.height }} onClick={() => onSelect(role.id)}
       title={`${name} · ${status}\n${title}${activity.detail ? `\n${activity.detail}` : ""}`}>
       <span><strong>{name}</strong><i />{status}</span><small>{title}</small>
     </button>;

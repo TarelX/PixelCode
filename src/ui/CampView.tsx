@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { MissingAssetError } from "../camp/asset-error";
 import { useAppStore } from "../app/store";
 import { drawCamp, loadCampLayout } from "../camp/tilemap";
-import { loadGenerals, placeGenerals, type GeneralSprite } from "../camp/sprites";
+import { FRAME_HEIGHT, loadGenerals, placeGenerals, type GeneralSprite } from "../camp/sprites";
 import { useRoster, type RoleConfig } from "../camp/roster";
 import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
@@ -77,7 +77,7 @@ export function CampView() {
       const parent = host.getBoundingClientRect();
       setAnchors(Object.fromEntries((generalsRef.current?.generals ?? []).map((general) => [general.role.id, {
         x: Math.round(general.x * stage.scale.x),
-        y: Math.round((general.y - 26) * stage.scale.y),
+        y: Math.round((general.y - FRAME_HEIGHT - 2) * stage.scale.y),
         footY: Math.round(general.y * stage.scale.y),
         canvas: { left: bounds.left - parent.left, top: bounds.top - parent.top, width: bounds.width, height: bounds.height },
       }])));
