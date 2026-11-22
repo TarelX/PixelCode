@@ -253,7 +253,7 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
-      <WorkspaceHeading />
+      <WorkspaceHeading plan={plan} />
       <nav className="workbench-tabs" aria-label={theme.workspace.navigation}>
         <button aria-current={tab === "conversation" ? "page" : undefined} onClick={() => setTab("conversation")}><PixelIcon name="chat" />{theme.studio.conversation}</button>
         <button aria-current={tab === "agents" ? "page" : undefined} onClick={() => setTab("agents")}><PixelIcon name="team" />{theme.studio.agents}<span className="tab-tag">{roles.length}</span></button>
