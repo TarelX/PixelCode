@@ -2,6 +2,7 @@ import { AnimatedSprite, Assets, Container, Rectangle, Sprite, Texture } from "p
 import { MissingAssetError } from "./asset-error";
 import { clipFrames, clipSpeed, stateAnimations, type Bubble, type GeneralState } from "./animations";
 import type { RoleConfig } from "./roster";
+import type { WorkPose } from "./work-actions";
 
 export const FRAME_WIDTH = 32;
 export const FRAME_HEIGHT = 32;
@@ -62,6 +63,15 @@ export class GeneralSprite extends Container {
     else this.body.gotoAndStop(0);
     this.bubble.visible = bubble !== undefined;
     if (bubble) this.bubble.texture = this.bubbles[bubble];
+  }
+
+  pose(pose: WorkPose, walking: boolean, reduced: boolean, direction: number) {
+    this.body.position.set(walking ? 0 : pose.lean, walking ? 0 : pose.nod);
+    if (walking && direction) this.body.scale.x = direction < 0 ? -1 : 1;
+    else if (!walking) this.body.scale.x = 1;
+    // Work is acted at the desk; walk frames are reserved for actual travel.
+    if (reduced || (!walking && pose.action !== "idle")) this.body.gotoAndStop(0);
+    else if (!this.body.playing) this.body.play();
   }
 }
 

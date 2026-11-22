@@ -3,6 +3,7 @@ import type { GeneralState } from "./animations";
 import type { RoleRun } from "./run";
 import type { StoredPlan } from "../ui/plan-layout";
 import { advanceRoute, handoffRoute, planHandoffs, roleActivity, type Handoff, type Point } from "./collaboration";
+import { workAction, workPose, type WorkAction } from "./work-actions";
 
 export interface Navigation { corridorY: number; exits: Record<string, Point> }
 
@@ -14,7 +15,7 @@ export class SceneMotion {
   private routes = new Map<string, Point[]>();
   private positions = new Map<string, Point>();
   private states = new Map<string, GeneralState>();
-  private elapsed = 0;
+  readonly actions = new Map<string, { kind: WorkAction; seconds: number; walking: boolean }>();
 
   constructor(private generals: GeneralSprite[], private homes: Record<string, Point>, private navigation?: Navigation) {
     for (const general of generals) {
@@ -38,6 +39,9 @@ export class SceneMotion {
     if (plan?.status === "aborted") { this.queue = []; this.active = null; this.routes.clear(); }
     for (const general of this.generals) {
       const { status } = roleActivity(general.role.id, plan, runs[general.role.id], general.role.role_type === "reviewer");
+      const kind = workAction(plan?.status === "aborted" ? "stopped" : status);
+      const previous = this.actions.get(general.role.id);
+      if (previous?.kind !== kind) this.actions.set(general.role.id, { kind, seconds: !previous && kind === "done" ? 10 : 0, walking: false });
       const state: GeneralState = ["running", "checking", "reviewing"].includes(status) ? "running"
         : ["done", "completed"].includes(status) ? "done" : ["failed", "blocked"].includes(status) ? "error"
           : status === "waiting" ? "waiting_user" : status === "stopped" ? "cancelled" : "idle";
@@ -46,7 +50,6 @@ export class SceneMotion {
   }
 
   tick(seconds: number, reducedMotion: boolean) {
-    this.elapsed += seconds;
     if (reducedMotion) { this.queue = []; this.active = null; this.routes.clear(); }
     const next = this.queue[0];
     if (!this.active && next && this.navigation) {
@@ -63,22 +66,24 @@ export class SceneMotion {
       const state = this.states.get(id) ?? "idle";
       let route = this.routes.get(id);
       const home = this.homes[id];
-      // Working roles make short trips beside their own desk, never random map-wide wandering.
-      if (!reducedMotion && !route?.length && state === "running" && this.active?.from.role_id !== id && this.navigation?.exits[id]) {
-        route = [{ ...this.navigation.exits[id] }, home];
-        this.routes.set(id, route);
-      }
-      if (state !== "running" && this.active?.from.role_id !== id) {
+      // Leave the workstation only for a real dependency handoff, not on a looping work patrol.
+      if (this.active?.from.role_id !== id) {
         route = [home]; this.routes.set(id, route);
       }
-      const moving = !reducedMotion && Boolean(route?.length);
-      const position = reducedMotion ? home : advanceRoute(this.positions.get(id)!, route ?? [], Math.min(seconds, .05) * 62);
+      const previous = this.positions.get(id)!;
+      const position = reducedMotion ? home : advanceRoute(previous, route ?? [], Math.min(seconds, .05) * 62);
+      const moving = position.x !== previous.x || position.y !== previous.y;
       this.positions.set(id, position);
       general.position.set(Math.round(position.x), Math.round(position.y));
       const visual = moving ? "running" : state === "running" || state === "done" ? "idle" : state;
       if (general.state !== visual) general.setState(visual, index);
       general.alpha = 1;
-      if (!moving && state === "running" && !reducedMotion) general.y += Math.round(Math.sin(this.elapsed * 3 + index));
+      const action = this.actions.get(id);
+      if (action) {
+        action.seconds += Math.min(seconds, .05);
+        action.walking = moving;
+        general.pose(workPose(action.kind, action.seconds, index, reducedMotion), moving, reducedMotion, position.x - previous.x);
+      }
     }
     if (this.active && !this.routes.get(this.active.from.role_id)?.length) this.active = null;
   }

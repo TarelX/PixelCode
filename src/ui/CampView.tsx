@@ -21,6 +21,7 @@ import type { BubbleAnchor } from "../camp/bubble";
 import { useI18n, roleName } from "../i18n";
 import { useScenePlan } from "../camp/use-scene-plan";
 import { SceneMotion } from "../camp/scene-motion";
+import { Workstations } from "../camp/workstations";
 import type { Handoff } from "../camp/collaboration";
 import { SceneTasks, SceneHandoffs } from "./SceneActivity";
 
@@ -198,7 +199,7 @@ export function CampView() {
       }
       const stations = Object.fromEntries(layout.zones
         .filter((zone) => zone.role)
-        .map((zone) => [zone.role!, {
+        .map((zone) => [zone.role!, layout.workstations?.stations[zone.role!]?.seat ?? {
           x: (zone.x + zone.w / 2) * layout.tileSize,
           y: (zone.y + zone.h) * layout.tileSize,
         }]));
@@ -217,11 +218,15 @@ export function CampView() {
       const motion = new SceneMotion(generals, stations, layout.navigation);
       motionRef.current = motion;
       motion.update(sceneStateRef.current.plan, sceneStateRef.current.runs);
+      const workstations = layout.workstations ? new Workstations(layout.workstations) : null;
+      if (workstations) stage.addChild(workstations);
       const envelope = new Graphics().rect(0, 0, 7, 5).fill("#e4c98b").rect(1, 1, 5, 1).fill("#927344");
       layer.addChild(envelope);
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
       const tick = () => {
-        motion.tick((appRef.current?.ticker.deltaMS ?? 16) / 1000, reduced.matches);
+        const seconds = (appRef.current?.ticker.deltaMS ?? 16) / 1000;
+        motion.tick(seconds, reduced.matches);
+        workstations?.tick(seconds, motion, generals, reduced.matches);
         const selected = generals.find((general) => general.role.id === useRoster.getState().selectedId);
         if (selected) marker.position.copyFrom(selected.position);
         const sender = generals.find((general) => general.role.id === motion.active?.from.role_id);
@@ -230,7 +235,10 @@ export function CampView() {
         setHandoff((previous) => previous?.id === motion.active?.id ? previous : motion.active);
       };
       appRef.current?.ticker.add(tick);
-      layer.on("destroyed", () => appRef.current?.ticker.remove(tick));
+      layer.on("destroyed", () => {
+        appRef.current?.ticker.remove(tick);
+        workstations?.destroy({ children: true });
+      });
       setGeneralsVersion((version) => version + 1);
     }).catch((reason) => {
       if (!cancelled) setError(["generalsError", reason]);
