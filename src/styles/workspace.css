@@ -280,6 +280,13 @@ button:disabled { cursor: not-allowed; }
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .feed-message { padding-block: 6px; }
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .feed-message pre { margin-block: 4px; line-height: 1.7; }
 }
+@media (min-height: 800px) and (max-height: 1100px) {
+  .workbench-activity:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) { overflow: hidden; }
+  .workbench-activity > .collaboration-scene:not([hidden]):has(.camp-map:not([hidden])) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .workbench-activity > .collaboration-scene:not([hidden]) > .camp-map:not([hidden]) { flex: 1; min-height: 0; overflow: auto; }
+  .workbench-activity > .collaboration-scene:not([hidden]) > :last-child { flex-shrink: 0; }
+  .workbench-activity:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) > .workbench-feed { flex: 0 0 160px; }
+}
 @media (max-width: 1000px) {
   .project-sidebar { width: 182px; flex-basis: 182px; }
   .workbench-grid { grid-template-columns: minmax(0, 1fr) 218px; }
