@@ -6,6 +6,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 ::selection { background: var(--ui-accent); color: var(--text-dark); }
 a { color: var(--ui-link); text-underline-offset: 3px; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; border-color: var(--ui-accent); }
 .pixelated, canvas, img { image-rendering: pixelated; }
 .pixel-icon { width: 16px; height: 16px; flex: 0 0 16px; vertical-align: middle; }
 .section-label { color: var(--ui-muted); font: 10px/1.5 ui-monospace, monospace; letter-spacing: 1.5px; }
@@ -53,7 +54,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--ui-accent); out
 .task-panel label { display: block; color: var(--ui-muted); font-size: 11px; }
 .task-panel textarea { width: 100%; resize: vertical; padding: 6px 8px; background: var(--ui-bg); color: var(--text-light); border: 1px solid var(--ui-border); border-radius: 0; }
 .task-actions, .task-loadouts { display: flex; gap: 8px; margin-top: 6px; }
-.task-panel button, .run-bubble button { border: 1px solid var(--ui-border); border-radius: 0; background: var(--ui-bg); color: var(--text-light); padding: 3px 10px; cursor: pointer; }
+.task-panel button:not(.pixel-button), .run-bubble button { border: 1px solid var(--ui-border); border-radius: 0; background: var(--ui-bg); color: var(--text-light); padding: 3px 10px; cursor: pointer; }
 .task-panel button[aria-pressed="true"] { border-color: var(--ui-accent); color: var(--ui-accent); }
 .task-panel button:disabled { opacity: .45; cursor: default; }
 .plan-clarification { display: grid; gap: 8px; }

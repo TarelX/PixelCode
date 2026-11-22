@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useRoster } from "../camp/roster";
 import { useRuns } from "../camp/run";
 import { useI18n, roleName } from "../i18n";
+import { PixelButton } from "./components/PixelButton";
 import "../styles/council.css";
 
 interface ConversationEvent {
@@ -57,16 +58,16 @@ export function CouncilPanel({ campId, ready, onPlan }: { campId: string; ready:
   return <section className="task-panel council-panel">
     <h2>{copy.title}</h2>
     <div className="council-roles" role="group" aria-label={copy.participants}>
-      {roles.map((role) => <button key={role.id} type="button" aria-pressed={chosen.includes(role.id)}
+      {roles.map((role) => <PixelButton key={role.id} aria-pressed={chosen.includes(role.id)}
         disabled={running || otherBusy || (!chosen.includes(role.id) && chosen.length >= 4)}
-        onClick={() => setSelected(chosen.includes(role.id) ? chosen.filter((id) => id !== role.id) : [...chosen, role.id])}>{roleName(role, locale)}</button>)}
+        onClick={() => setSelected(chosen.includes(role.id) ? chosen.filter((id) => id !== role.id) : [...chosen, role.id])}>{roleName(role, locale)}</PixelButton>)}
     </div>
     <p className="council-hint">{copy.hint}</p>
     <label htmlFor="council-request">{copy.request}</label>
     <textarea id="council-request" rows={2} value={request} disabled={running} onChange={(event) => setRequest(event.target.value)} placeholder={copy.placeholder} />
     <div className="task-actions">
-      <button disabled={!ready || !listening || running || otherBusy || chosen.length < 2 || chosen.length > 4 || !request.trim()} onClick={() => void start()}>{running ? copy.running : copy.start}</button>
-      {running && <button onClick={() => void stop()}>{copy.stop}</button>}
+      <PixelButton variant="primary" disabled={!ready || !listening || running || otherBusy || chosen.length < 2 || chosen.length > 4 || !request.trim()} onClick={() => void start()}>{running ? copy.running : copy.start}</PixelButton>
+      {running && <PixelButton onClick={() => void stop()}>{copy.stop}</PixelButton>}
     </div>
     <ol className="council-transcript" aria-label={copy.transcript} aria-live="polite">
       {turns.map((turn, index) => {
@@ -74,7 +75,7 @@ export function CouncilPanel({ campId, ready, onPlan }: { campId: string; ready:
         return <li key={index}><strong>{speaker ? roleName(speaker, locale) : turn.name} · {copy.round.replace("{round}", String(turn.round))}</strong><p>{turn.text}</p></li>;
       })}
     </ol>
-    {outcome === "plan_saved" && <p role="status">{copy.saved} <button onClick={onPlan}>{copy.openWall}</button></p>}
+    {outcome === "plan_saved" && <p role="status">{copy.saved} <PixelButton onClick={onPlan}>{copy.openWall}</PixelButton></p>}
     {outcome === "stopped" && <p role="status">{copy.stopped}</p>}
     {error && <p role="alert">{error}</p>}
   </section>;

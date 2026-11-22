@@ -11,12 +11,16 @@ interface PixelDialogProps {
 
 export function PixelDialog({ open, title, closeLabel, onClose, children }: PixelDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog || dialog.open === open) return;
-    if (open) dialog.showModal();
+    if (open) {
+      dialog.showModal();
+      if (bodyRef.current) bodyRef.current.scrollTop = 0;
+    }
     else dialog.close();
   }, [open]);
 
@@ -37,7 +41,7 @@ export function PixelDialog({ open, title, closeLabel, onClose, children }: Pixe
         <h2 id={titleId}>{title}</h2>
         <PixelButton onClick={onClose}>{closeLabel}</PixelButton>
       </div>
-      <div className="pixel-dialog__body">{children}</div>
+      <div ref={bodyRef} className="pixel-dialog__body">{children}</div>
     </dialog>
   );
 }
