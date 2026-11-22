@@ -5,6 +5,18 @@
   "background": "command-room.png",
   "foreground": "command-room-desks.png",
   "groundColor": "#4c8f3a",
+  "navigation": {
+    "corridorY": 94,
+    "exits": {
+      "captain": { "x": 200, "y": 48 },
+      "web-designer": { "x": 80, "y": 48 },
+      "reviewer": { "x": 304, "y": 48 },
+      "architect": { "x": 80, "y": 144 },
+      "frontend": { "x": 192, "y": 144 },
+      "backend": { "x": 264, "y": 144 },
+      "debugger": { "x": 304, "y": 144 }
+    }
+  },
   "zones": [
     { "id": "hq", "x": 9, "y": 1, "w": 2, "h": 2, "color": "#c44b3a", "role": "captain" },
     { "id": "muster", "x": 8, "y": 4, "w": 4, "h": 1, "color": "#f5c51b" },

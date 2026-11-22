@@ -3,6 +3,9 @@
     "eyebrow": "项目工作台", "description": "从一个想法，到团队协作，再到交付。", "agents": "位 Agent", "active": "运行中", "projects": "工作空间", "localProject": "本地项目", "startHint": "描述目标，开始协作", "yourTeam": "你的像素团队", "teamTitle": "各有所长，一起创造。", "teamHint": "规划、设计、开发与审查，在同一个工作空间里。",
     "steps": [{ "title": "打开项目", "hint": "连接一个本地文件夹" }, { "title": "告诉团队你的目标", "hint": "由队长规划，或直接分派" }, { "title": "见证想法落地", "hint": "跟进任务、审查产出并交付" }]
   },
+  "scene": {
+    "idle": "待命", "available": "等待分派任务", "draft": "待确认", "handoffs": "任务交接", "hint": "跟随真实任务依赖 · 不影响执行", "empty": "任务完成后，依赖产物和接手角色会显示在这里。", "handing": "交接中", "to": "告知", "ready": "依赖已就绪", "waiting": "等待其他依赖"
+  },
   "studio": {
     "openProject": "打开项目", "chooseFolder": "选择本地文件夹开始", "newTask": "分派新任务", "conversations": "任务 / 对话", "newConversation": "向队长分派任务", "noConversations": "运行任务后，角色对话会显示在这里。", "sessionHint": "每位 Agent 显示最近一次运行。本次打开项目的消息不保存为聊天历史。",
     "agents": "Agents", "conversation": "对话", "tasks": "任务板", "collaboration": "协作现场", "live": "实时", "hideScene": "收起现场", "showScene": "展开现场", "activity": "实时消息流", "all": "全部", "selected": "当前 Agent", "emptyTitle": "你的团队，已就位。", "emptyHint": "描述一个目标，让队长规划，或选择一位 Agent 直接开始。", "team": "多 Agent 协同", "lead": "当前 Agent", "progress": "执行进度", "noPlan": "尚无执行计划", "planHint": "向队长描述目标，确认计划后开始协作。", "outputs": "产出物", "noOutputs": "任务产出会显示在这里", "editAgent": "配置 Agent", "role": "执行角色", "loadout": "CLI / 模型", "skills": "技能", "skillHint": "来自当前角色配置", "noSkills": "未配置技能", "permissions": "权限", "configure": "配置", "send": "发送任务", "plan": "队长规划", "direct": "直接执行", "local": "本地执行 · 不上传代码", "teamReady": "团队就绪", "done": "已完成", "viewPlan": "查看计划", "prompt": "描述任务，或向你的团队提出问题…", "stations": { "web-designer": "设计区", "architect": "架构区", "captain": "指挥区", "reviewer": "审查区", "frontend": "开发区", "backend": "后端", "debugger": "调试" }

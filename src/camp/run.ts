@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { Artifact } from "../orchestrator/artifact-manager";
 
 export interface RoleRun {
+  prompt?: string;
   run_id: number;
   task_id: string;
   artifact?: Artifact;
@@ -30,6 +31,7 @@ export interface Clarification {
 
 export const useRuns = create<{
   runs: Record<string, RoleRun>;
+  prompts: Record<string, string>;
   busy: boolean;
   error: string;
   receive: (event: RunEvent) => void;
@@ -37,12 +39,12 @@ export const useRuns = create<{
   start: (campId: string, roleId: string, loadoutIndex: number, prompt: string, clarification?: Clarification) => Promise<string[] | null>;
   stop: () => Promise<void>;
 }>((set) => ({
-  runs: {}, busy: false, error: "",
+  runs: {}, prompts: {}, busy: false, error: "",
   receive: (event) => set((state) => {
     const previous = state.runs[event.role_id];
     if (event.type !== "started" && previous?.run_id !== event.run_id) return state;
     const run: RoleRun = event.type === "started"
-      ? { run_id: event.run_id, task_id: event.task_id, status: "running", text: "", tool: "", error: "" }
+      ? { run_id: event.run_id, task_id: event.task_id, prompt: state.prompts[event.role_id], status: "running", text: "", tool: "", error: "" }
       : { ...previous };
     if (event.type === "text") run.text = (run.text + (event.text ?? "")).slice(-32000);
     if (event.type === "tool") run.tool = event.name ?? "";
@@ -51,14 +53,16 @@ export const useRuns = create<{
       run.error = event.message ?? "";
       run.artifact = event.artifact;
     }
-    return { runs: { ...state.runs, [event.role_id]: run } };
+    return { runs: { ...state.runs, [event.role_id]: run }, prompts: event.type === "started"
+      ? Object.fromEntries(Object.entries(state.prompts).filter(([id]) => id !== event.role_id)) : state.prompts };
   }),
   dismiss: (id) => set((state) => ({ runs: Object.fromEntries(Object.entries(state.runs).filter(([key]) => key !== id)) })),
   start: async (campId, roleId, loadoutIndex, prompt, clarification) => {
     set({ busy: true, error: "" });
+    set((state) => ({ prompts: { ...state.prompts, [roleId]: prompt } }));
     try { return await invoke<string[] | null>("start_role_run", { campId, roleId, loadoutIndex, prompt, clarification }); }
     catch (error) { set({ error: String(error) }); return null; }
-    finally { set({ busy: false }); }
+    finally { set((state) => ({ busy: false, prompts: Object.fromEntries(Object.entries(state.prompts).filter(([id]) => id !== roleId)) })); }
   },
   stop: async () => {
     try { await invoke("stop_role_run"); }
@@ -67,7 +71,7 @@ export const useRuns = create<{
 }));
 
 export function listenToRuns(campId: string) {
-  useRuns.setState({ runs: {}, error: "" });
+  useRuns.setState({ runs: {}, prompts: {}, error: "" });
   return listen<RunEvent>("role-run", ({ payload }) => {
     if (payload.camp_id === campId) useRuns.getState().receive(payload);
   });
