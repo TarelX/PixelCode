@@ -42,11 +42,11 @@ export class Workstations extends Container {
     generals.forEach((general, index) => {
       const state = motion.actions.get(general.role.id);
       if (!state || !this.displays.has(general.role.id)) return;
-      this.draw(general.role.id, workPose(state.kind, state.seconds, index, reduced), !state.walking);
+      this.draw(general.role.id, workPose(state.kind, state.seconds, index, reduced), !state.walking, !general.hasWorkPose);
     });
   }
 
-  private draw(id: string, pose: WorkPose, atDesk: boolean) {
+  private draw(id: string, pose: WorkPose, atDesk: boolean, drawHands: boolean) {
     const g = this.displays.get(id)!.clear();
     const { screen: s, keyboard: k, seat, hands } = this.config.stations[id];
     const p = this.config.palette;
@@ -80,7 +80,7 @@ export class Workstations extends Container {
     } else {
       line(2, 2, 6, p.muted); line(2, 4, 9, p.muted);
     }
-    if (atDesk && ["typing", "checking", "reviewing"].includes(action)) {
+    if (atDesk && drawHands && ["typing", "checking", "reviewing"].includes(action)) {
       // Attached forearms reach from the visible torso to the keys, not floating dots below a monitor.
       for (const [shoulder, wrist, tap, bend] of [[seat.x - 4 + pose.lean, k.x + 1, pose.left, -1], [seat.x + 3 + pose.lean, k.x + 8, pose.right, 1]]) {
         const top = seat.y - 5 + pose.nod, bottom = k.y - 1 + tap;
@@ -94,9 +94,9 @@ export class Workstations extends Container {
         for (const point of pixels) g.rect(point.x, point.y, 2, 2).fill(hands);
         g.rect(wrist, bottom, 3, 2).fill(hands);
       }
-      if (pose.left) g.rect(k.x + 2, k.y + 3, 2, 1).fill(p.code);
-      if (pose.right) g.rect(k.x + 9, k.y + 3, 2, 1).fill(p.code);
     }
+    if (atDesk && pose.left) g.rect(k.x + 2, k.y + 3, 2, 1).fill(p.code);
+    if (atDesk && pose.right) g.rect(k.x + 9, k.y + 3, 2, 1).fill(p.code);
     // A desk light, not a progress bar: it only reports the scheduler's current state.
     const light = action === "error" ? p.error : action === "checking" ? p.checking : action === "reviewing" ? p.review
       : action === "waiting" ? p.waiting : action === "idle" || action === "stopped" ? p.muted : p.code;

@@ -185,5 +185,7 @@ PixelCode is a local desktop app that turns the coding agent CLIs you already ha
 ## License
 
 Code and original scenery: MIT. Pokémon sprites: © Nintendo/Game Freak/Creatures, sourced from NightCatSama/pokedex (no license provided); not covered by MIT. This app is not affiliated with Nintendo.
+
+Smeargle and Metagross desk-pose derivatives are baked locally by `python tools/generate_work_poses.py` (Pillow), using the same source sprites and palette. Original idle/travel sprites are unchanged; the derivative art carries the same third-party rights notice above.
 The workspace's anchored picker placement adapts MIT-licensed MonoCode code
 (Copyright (c) 2026 Nick); see [third-party notices](THIRD_PARTY_NOTICES.md).
