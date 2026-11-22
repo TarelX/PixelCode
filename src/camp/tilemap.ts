@@ -19,6 +19,7 @@ export interface CampLayout {
   groundColor: string;
   background?: string;
   foreground?: string;
+  navigation?: import("./scene-motion").Navigation;
   zones: CampZone[];
 }
 

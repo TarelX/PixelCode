@@ -18,6 +18,10 @@ import { PixelIcon } from "./components/PixelIcon";
 import { listenToRuns, useRuns } from "../camp/run";
 import type { BubbleAnchor } from "../camp/bubble";
 import { useI18n, roleName } from "../i18n";
+import { useScenePlan } from "../camp/use-scene-plan";
+import { SceneMotion } from "../camp/scene-motion";
+import type { Handoff } from "../camp/collaboration";
+import { SceneTasks, SceneHandoffs } from "./SceneActivity";
 
 function drawMarker(color: string) {
   return new Graphics()
@@ -48,6 +52,11 @@ export function CampView() {
   const runs = useRuns((s) => s.runs);
   const [listening, setListening] = useState(false);
   const [anchors, setAnchors] = useState<Record<string, BubbleAnchor>>({});
+  const { plan, error: sceneError } = useScenePlan(camp?.id);
+  const motionRef = useRef<SceneMotion | null>(null);
+  const sceneStateRef = useRef({ plan, runs });
+  sceneStateRef.current = { plan, runs };
+  const [handoff, setHandoff] = useState<Handoff | null>(null);
 
   useEffect(() => {
     if (!camp) return;
@@ -76,17 +85,17 @@ export function CampView() {
     const observer = new ResizeObserver(position);
     observer.observe(host);
     host.addEventListener("scroll", position);
+    let elapsed = 0;
+    const tick = () => { elapsed++; if (elapsed % 3 === 0) position(); };
+    const app = appRef.current;
+    app?.ticker.add(tick);
     position();
-    return () => { observer.disconnect(); host.removeEventListener("scroll", position); };
+    return () => { observer.disconnect(); host.removeEventListener("scroll", position); app?.ticker.remove(tick); };
   }, [generalsVersion]);
 
   useEffect(() => {
-    for (const general of generalsRef.current?.generals ?? []) {
-      const status = runs[general.role.id]?.status;
-      const state = status === "completed" ? "done" : status === "failed" ? "error" : status === "stopped" ? "cancelled" : status === "waiting" ? "waiting_user" : status ?? "idle";
-      if (general.state !== state) general.setState(state);
-    }
-  }, [runs, generalsVersion]);
+    motionRef.current?.update(plan, runs);
+  }, [runs, plan, generalsVersion]);
 
   const openCard = useCallback((role: RoleConfig | null) => {
     if (role) select(role.id);
@@ -206,6 +215,23 @@ export function CampView() {
       placeGenerals(layer, generals, stations);
       stage.addChildAt(layer, 1);
       generalsRef.current = { generals, marker };
+      const motion = new SceneMotion(generals, stations, layout.navigation);
+      motionRef.current = motion;
+      motion.update(sceneStateRef.current.plan, sceneStateRef.current.runs);
+      const envelope = new Graphics().rect(0, 0, 7, 5).fill("#e4c98b").rect(1, 1, 5, 1).fill("#927344");
+      layer.addChild(envelope);
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const tick = () => {
+        motion.tick((appRef.current?.ticker.deltaMS ?? 16) / 1000, reduced.matches);
+        const selected = generals.find((general) => general.role.id === useRoster.getState().selectedId);
+        if (selected) marker.position.copyFrom(selected.position);
+        const sender = generals.find((general) => general.role.id === motion.active?.from.role_id);
+        envelope.visible = Boolean(sender);
+        if (sender) envelope.position.set(sender.x + 6, sender.y - 12);
+        setHandoff((previous) => previous?.id === motion.active?.id ? previous : motion.active);
+      };
+      appRef.current?.ticker.add(tick);
+      layer.on("destroyed", () => appRef.current?.ticker.remove(tick));
       setGeneralsVersion((version) => version + 1);
     }).catch((reason) => {
       if (!cancelled) setError(["generalsError", reason]);
@@ -213,6 +239,7 @@ export function CampView() {
     return () => {
       cancelled = true;
       generalsRef.current = null;
+      motionRef.current = null;
       if (!layer.destroyed) layer.destroy({ children: true });
     };
   }, [roles, stageVersion]);
@@ -239,6 +266,7 @@ export function CampView() {
         <section className="collaboration-scene" hidden={tab !== "agents"}>
           <header><strong>{theme.studio.collaboration}</strong><span className="live-label"><i className="status-dot" />{theme.studio.live}</span><button onClick={() => setSceneOpen(!sceneOpen)}>{sceneOpen ? theme.studio.hideScene : theme.studio.showScene}<PixelIcon name="chevron" /></button></header>
           <div className="camp-map" hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
+            <SceneTasks roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
             <div className="station-overlay">{roles.map((role) => {
               const anchor = anchors[role.id];
               if (!anchor) return null;
@@ -247,6 +275,7 @@ export function CampView() {
               </button>;
             })}</div>
           </div></div>
+          {sceneOpen && <SceneHandoffs plan={plan} roles={roles} handoff={handoff} error={sceneError} onPlan={() => setTab("tasks")} />}
         </section>
         <div className="workbench-feed" hidden={tab === "tasks" || tab === "council"}><RunFeed onPlan={() => setTab("tasks")} /></div>
         <div className="workbench-board" hidden={tab !== "tasks"}>{camp && <TaskBoard key={camp.id} campId={camp.id} />}</div>
