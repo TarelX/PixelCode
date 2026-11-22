@@ -64,11 +64,8 @@ button:disabled { cursor: not-allowed; }
 .workspace-main { min-height: 0; overflow: hidden; }
 .pixel-shell__content { overflow: auto; }
 .camp-screen { min-height: 0; padding: 0; }
-.workspace-heading { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 20px; padding: 22px 28px 20px; }
-.workspace-heading > div:first-child { min-width: 0; }
-.workspace-heading .section-label { color: var(--ui-muted); font-size: 9px; letter-spacing: 1.7px; }
-.workspace-heading h1 { font-size: 24px; line-height: 1.3; letter-spacing: -.7px; margin: 5px 0 6px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.workspace-heading p { margin: 0; font-size: 11px; color: var(--ui-muted); }
+.workspace-heading { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 28px; }
+.workspace-heading h1 { min-width: 0; margin: 0; font-size: 13px; line-height: 1.6; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .workspace-metrics { display: flex; gap: 16px; flex-shrink: 0; }
 .workspace-metrics > span { display: flex; align-items: center; gap: 7px; color: var(--ui-muted); font-size: 11px; white-space: nowrap; }
 .workspace-metrics strong { color: var(--text-light); font: 13px ui-monospace, monospace; }
@@ -246,24 +243,26 @@ button:disabled { cursor: not-allowed; }
   .workbench-grid { grid-template-columns: minmax(0, 1fr) 246px; }
   .workbench-center { padding-inline: 18px; }
   .workspace-heading { padding-inline: 22px; }
-  .workspace-metrics { flex-direction: column; gap: 8px; }
+  .workspace-metrics { gap: 12px; }
   .composer-skills .composer-picker__trigger > span { display: none; }
   .welcome-hero { gap: 24px; }
   .title-screen { padding: 48px 32px 28px; }
 }
 @media (max-height: 920px) {
-  .workspace-heading { padding-block: 16px; }
-  .workspace-heading h1 { font-size: 22px; }
   .agent-focus, .team-progress { padding-block: 12px; }
   .role-roster__item { min-height: 40px; padding-block: 6px; }
   .title-screen { padding-top: 38px; }
   .welcome-workflow { margin-top: 28px; }
 }
 @media (max-height: 720px) {
-  .workspace-heading { padding-block: 10px; }
-  .workspace-heading p, .workspace-heading .section-label { display: none; }
-  .workspace-heading h1 { margin: 0; font-size: 20px; }
-  .workspace-metrics { flex-direction: row; }
+  .agent-panel__header { min-height: 36px; }
+  .agent-focus, .team-progress { padding-block: 8px; }
+  .agent-panel h3 { margin-bottom: 6px; }
+  .agent-focus > h3, .agent-focus > p { display: none; }
+  .agent-focus > button { padding: 6px; gap: 8px; }
+  .team-progress .plan-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-block: 0; }
+  .team-progress > p { margin-block: 4px; }
+  .role-roster__head { padding-top: 10px; }
   .workbench-center { padding-top: 12px; }
   .collaboration-scene { margin-bottom: 8px; }
   .composer-input > textarea { height: 118px; }
@@ -276,7 +275,6 @@ button:disabled { cursor: not-allowed; }
   .workbench-tabs { gap: 14px; padding-inline: 18px; }
   .workbench-tabs button { font-size: 11px; }
   .composer-permissions, .composer-skills { display: none; }
-  .workspace-heading p { max-width: 240px; }
   .welcome-hero { grid-template-columns: 1fr; gap: 24px; }
   .welcome-ensemble { display: none; }
   .welcome-copy h1 br { display: none; }

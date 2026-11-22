@@ -6,6 +6,7 @@ import { useRuns } from "../camp/run";
 import { readArtifact } from "../orchestrator/artifact-manager";
 import { roleName, roleTitle, useI18n } from "../i18n";
 import type { StoredPlan } from "./plan-layout";
+import { planProgress } from "./plan-progress";
 import { RoleRoster } from "./RoleRoster";
 import { RoleAvatar } from "./components/RoleAvatar";
 import { PixelIcon } from "./components/PixelIcon";
@@ -43,8 +44,7 @@ export function AgentPanel({ campId, onOpen, onPlan, children }: { campId: strin
     return () => { active = false; for (const subscription of subscriptions) void subscription.then((stop) => stop(), () => {}); };
   }, [campId, refresh]);
   useEffect(() => { void refresh(); }, [refresh, revision]);
-  const tasks = plan?.plan.tasks ?? [];
-  const done = tasks.filter((task) => task.status === "done").length;
+  const progress = plan ? planProgress(plan) : null;
   const artifacts = Object.values(runs).flatMap((run) => run.artifact ? [run.artifact] : []);
   return <aside className="agent-panel" aria-label={theme.studio.team}>
     <header className="agent-panel__header"><PixelIcon name="team" /><strong>{theme.studio.team}</strong><span>{roles.length}</span></header>
@@ -52,7 +52,7 @@ export function AgentPanel({ campId, onOpen, onPlan, children }: { campId: strin
       <RoleAvatar avatar={selected.avatar} /><span><strong>{roleName(selected, locale)}</strong><small>{roleTitle(selected, locale)}</small></span><PixelIcon name="edit" />
     </button>}<p>{selected?.loadouts[0]?.cli ?? theme.taskSelect}</p></section>
     <section className="team-progress"><div className="panel-section-heading"><h3>{theme.studio.progress}</h3><button onClick={onPlan} aria-label={theme.studio.viewPlan} title={theme.studio.viewPlan}><PixelIcon name="arrow" /></button></div>
-      {plan ? <><div className="progress-track" role="progressbar" aria-label={theme.studio.progress} aria-valuemin={0} aria-valuemax={tasks.length || 1} aria-valuenow={done}><span style={{ width: `${tasks.length ? done / tasks.length * 100 : 0}%` }} /></div><p><strong>{done} / {tasks.length}</strong><span>{theme.studio.done}</span></p><button className="plan-summary" onClick={onPlan}>{plan.user_request}</button><small>{(theme.wall.planStatuses as Record<string, string>)[plan.status] ?? plan.status}</small></> : <><div className="progress-track"><span /></div><p>{theme.studio.noPlan}</p><small>{theme.studio.planHint}</small></>}
+      {plan && progress ? <><div className="progress-track" role="progressbar" aria-label={theme.studio.progress} aria-valuetext={theme.studio.progressStates[progress.phase]} aria-valuemin={0} aria-valuemax={progress.total || 1} aria-valuenow={progress.done}><span style={{ width: `${progress.total ? progress.done / progress.total * 100 : 0}%` }} /></div><p><strong>{progress.done} / {progress.total}</strong><span>{theme.studio.progressStates[progress.phase]}</span></p><button className="plan-summary" onClick={onPlan} title={plan.user_request}>{plan.user_request}</button><small>{(theme.wall.planStatuses as Record<string, string>)[plan.status] ?? plan.status}</small></> : <><div className="progress-track"><span /></div><p>{theme.studio.noPlan}</p><small>{theme.studio.planHint}</small></>}
       {error && <p role="alert">{error}</p>}
     </section>
     <RoleRoster onOpen={onOpen} />

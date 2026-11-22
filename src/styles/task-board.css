@@ -19,7 +19,7 @@
 .task-status--running { color: var(--state-busy); }
 .task-status--checking { color: var(--ui-success); }
 .task-status--reviewing { color: var(--ui-link); }
-.task-status--done { color: var(--state-done); }
+.task-status--done { color: var(--ui-success); }
 .task-status--blocked { color: var(--ui-warning); }
 .task-status--failed { color: var(--ui-error); }
 .task-detail dl { margin: 0; }

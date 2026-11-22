@@ -1,4 +1,6 @@
 .council-roles { display: flex; flex-wrap: wrap; gap: 6px; }
+.council-roles .pixel-button { min-height: 32px; padding: 6px 10px; }
+.council-panel .task-actions { margin-top: 12px; }
 .council-hint { color: var(--ui-muted); font-size: 11px; }
 .council-transcript { max-height: 280px; overflow-y: auto; padding-left: 24px; }
 .council-transcript li { margin-top: 12px; }
