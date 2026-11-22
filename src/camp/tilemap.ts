@@ -20,6 +20,7 @@ export interface CampLayout {
   background?: string;
   foreground?: string;
   navigation?: import("./scene-motion").Navigation;
+  workstations?: import("./workstations").WorkstationLayout;
   zones: CampZone[];
 }
 
