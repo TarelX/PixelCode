@@ -25,6 +25,7 @@ import { Workstations } from "../camp/workstations";
 import type { Handoff } from "../camp/collaboration";
 import { SceneTasks, SceneHandoffs } from "./SceneActivity";
 import { stationLabelRect } from "../camp/scene-labels";
+import { MapScrollHint } from "./MapScrollHint";
 
 function drawMarker(color: string) {
   return new Graphics()
@@ -44,6 +45,7 @@ export function CampView() {
   const select = useRoster((s) => s.select);
   const roleError = useRoster((s) => s.error);
   const hostRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Container | null>(null);
   const appRef = useRef<Application | null>(null);
   const generalsRef = useRef<{ generals: GeneralSprite[]; marker: Graphics } | null>(null);
@@ -278,7 +280,7 @@ export function CampView() {
         <div className="workbench-activity" hidden={tab === "tasks" || tab === "council"}>
         <section className="collaboration-scene" hidden={tab !== "agents"}>
           <header><strong>{theme.studio.collaboration}</strong><span className="live-label"><i className="status-dot" />{theme.studio.live}</span><button onClick={() => setSceneOpen(!sceneOpen)}>{sceneOpen ? theme.studio.hideScene : theme.studio.showScene}<PixelIcon name="chevron" /></button></header>
-          <div className="camp-map" hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
+          <div className="camp-map" ref={mapRef} hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
             <SceneTasks placement="top" roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
             <SceneTasks placement="bottom" roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
             <div className="station-overlay">{roles.map((role) => {
@@ -292,7 +294,7 @@ export function CampView() {
                 <span>{roleName(role, locale)}</span><i className={`status-dot run-dot--${runs[role.id]?.status ?? "idle"}`} />
               </button>;
             })}</div>
-          </div></div>
+          </div><MapScrollHint viewport={mapRef} active={sceneOpen && tab === "agents"} /></div>
           {sceneOpen && <SceneHandoffs plan={plan} roles={roles} handoff={handoff} error={sceneError} onPlan={() => setTab("tasks")} />}
         </section>
         <div className="workbench-feed" hidden={tab === "tasks" || tab === "council"}><RunFeed onPlan={() => setTab("tasks")} /></div>
