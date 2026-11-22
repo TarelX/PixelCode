@@ -1,6 +1,6 @@
 import { Assets, Container, Graphics, Sprite, type Texture } from "pixi.js";
 import { MissingAssetError } from "./asset-error";
-import camp from "../../themes/three-kingdoms/camp.json";
+import camp from "../../themes/pokemon/camp.json";
 
 export interface CampZone {
   id: string;
@@ -27,12 +27,12 @@ export function loadCampLayout(): CampLayout {
   return camp;
 }
 
-const scenery = import.meta.glob<string>("/themes/three-kingdoms/tiles/*.png", { query: "?url", import: "default", eager: true });
+const scenery = import.meta.glob<string>("/themes/pokemon/tiles/*.png", { query: "?url", import: "default", eager: true });
 
 export async function drawCamp(layout: CampLayout): Promise<Container> {
   const container = new Container();
   if (layout.background) {
-    const url = scenery[`/themes/three-kingdoms/tiles/${layout.background}`];
+    const url = scenery[`/themes/pokemon/tiles/${layout.background}`];
     if (!url) throw new MissingAssetError(layout.background);
     const texture = await Assets.load<Texture>(url);
     texture.source.scaleMode = "nearest";

@@ -7,8 +7,8 @@ import { parse } from "yaml";
 const root = new URL("../", import.meta.url);
 const load = (path) => readFile(new URL(path, root), "utf8");
 const roles = await Promise.all((await readdir(new URL("roles/", root))).filter((file) => file.endsWith(".yaml")).map(async (file) => parse(await load(`roles/${file}`))));
-const zh = JSON.parse(await load("themes/three-kingdoms/ui.json"));
-const en = JSON.parse(await load("themes/three-kingdoms/ui.en.json"));
+const zh = JSON.parse(await load("themes/pokemon/ui.json"));
+const en = JSON.parse(await load("themes/pokemon/ui.en.json"));
 
 function shape(value, path = "") {
   if (value === null || typeof value !== "object") return [`${path}:${typeof value}`];
@@ -24,8 +24,8 @@ test("Chinese and English UI copy have the same keys and no empty strings", () =
 });
 
 test("every preset general has a sprite, a theme name and a camp post", async () => {
-  const { generals } = parse(await load("themes/three-kingdoms/names.yaml"));
-  const camp = JSON.parse(await load("themes/three-kingdoms/camp.json"));
+  const { generals } = parse(await load("themes/pokemon/names.yaml"));
+  const camp = JSON.parse(await load("themes/pokemon/camp.json"));
   assert.equal(roles.length, 7);
   assert.equal(new Set(roles.map((role) => role.id)).size, roles.length);
   for (const role of roles) {
@@ -34,22 +34,32 @@ test("every preset general has a sprite, a theme name and a camp post", async ()
     assert.ok(general, `${role.id} is missing from names.yaml`);
     assert.equal(general.name, role.name);
     assert.equal(general.name_en, role.name_en);
+    assert.equal(general.avatar, role.avatar);
+    assert.equal(general.title, role.title);
+    assert.ok(general.title_en && role.personality.includes(role.name));
+    const sheet = await readFile(new URL(`assets/sprites/${role.avatar}`, root));
+    assert.equal(sheet.subarray(1, 4).toString(), "PNG");
+    assert.deepEqual([sheet.readUInt32BE(16), sheet.readUInt32BE(20)], [128, 32]);
     assert.ok(camp.zones.some((zone) => zone.role === role.id), `${role.id} has no camp post`);
     assert.ok(role.loadouts.length > 0 && role.loadouts.every(({ cli }) => ["claude-code", "codex"].includes(cli)));
     assert.ok(Object.hasOwn(zh.roleTypes, role.role_type) && Object.hasOwn(en.roleTypes, role.role_type));
   }
   const reviewer = roles.find((role) => role.role_type === "reviewer");
+  assert.deepEqual(Object.fromEntries(roles.map(({ id, name_en }) => [id, name_en])), {
+    reviewer: "Alakazam", frontend: "Lucario", backend: "Machamp", architect: "Metagross",
+    captain: "Pikachu", debugger: "Porygon", "web-designer": "Smeargle",
+  });
   assert.ok(reviewer.permissions.allow.every((tool) => ["Read", "Grep", "Glob"].includes(tool)));
 });
 
 test("camp zones fit the 320x180 logical map on whole tiles", async () => {
-  const camp = JSON.parse(await load("themes/three-kingdoms/camp.json"));
+  const camp = JSON.parse(await load("themes/pokemon/camp.json"));
   assert.deepEqual([camp.width, camp.height, camp.tileSize], [320, 180, 16]);
   for (const { id, x, y, w, h } of camp.zones) {
     assert.ok([x, y, w, h].every(Number.isInteger), id);
     assert.ok(x >= 0 && y >= 0 && (x + w) * camp.tileSize <= camp.width && (y + h) * camp.tileSize <= camp.height, id);
   }
-  await access(new URL(`themes/three-kingdoms/tiles/${camp.background}`, root));
+  await access(new URL(`themes/pokemon/tiles/${camp.background}`, root));
 });
 
 test("every general state maps to a clip with frames inside the 4-frame sheet", async () => {
