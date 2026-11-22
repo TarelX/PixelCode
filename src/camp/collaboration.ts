@@ -26,13 +26,17 @@ export function roleActivity(id: string, plan: StoredPlan | null, run?: RoleRun,
   const tasks = plan?.plan.tasks.filter((task) => task.role_id === id) ?? [];
   const task = tasks.find((task) => ["running", "checking", "reviewing", "blocked", "failed"].includes(task.status ?? ""))
     ?? tasks.find((task) => !task.status || task.status === "pending") ?? tasks[tasks.length - 1];
-  // A direct run started after a plan must not be hidden behind its old task.
-  if (run && (run.status === "running" || run.status === "waiting" || !task)) {
+  // Direct task ids carry the start time; keep their final state visible rather
+  // than reverting to an older plan. A newly executing plan remains authoritative.
+  const directStart = Number(run?.task_id?.match(/^run-(\d+)-/)?.[1] ?? 0);
+  const newerDirect = plan?.status !== "executing" && directStart > (plan?.created_at ?? 0);
+  if (run && (run.status === "running" || run.status === "waiting" || !task || newerDirect)) {
     return { title: run.prompt || run.tool, status: run.status, detail: run.error || run.tool };
   }
   const review = reviewer && plan?.plan.tasks.find((task) => task.status === "reviewing");
   if (review) return { title: review.title, status: "reviewing", detail: "" };
-  return { title: task?.title ?? "", status: plan?.status === "draft" ? "draft" : task?.status ?? "idle", detail: "" };
+  const status = plan?.status === "draft" ? "draft" : plan?.status === "aborted" && !["done", "failed", "blocked"].includes(task?.status ?? "") ? "stopped" : task?.status ?? "idle";
+  return { title: task?.title ?? "", status, detail: "" };
 }
 
 export interface Point { x: number; y: number }

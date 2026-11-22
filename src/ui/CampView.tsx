@@ -24,6 +24,7 @@ import { SceneMotion } from "../camp/scene-motion";
 import { Workstations } from "../camp/workstations";
 import type { Handoff } from "../camp/collaboration";
 import { SceneTasks, SceneHandoffs } from "./SceneActivity";
+import { stationLabelRect } from "../camp/scene-labels";
 
 function drawMarker(color: string) {
   return new Graphics()
@@ -219,7 +220,10 @@ export function CampView() {
       motionRef.current = motion;
       motion.update(sceneStateRef.current.plan, sceneStateRef.current.runs);
       const workstations = layout.workstations ? new Workstations(layout.workstations) : null;
-      if (workstations) stage.addChild(workstations);
+      if (workstations) {
+        stage.addChild(workstations);
+        workstations.addChild(...generals.map((general) => general.deskHands));
+      }
       const envelope = new Graphics().rect(0, 0, 7, 5).fill("#e4c98b").rect(1, 1, 5, 1).fill("#927344");
       layer.addChild(envelope);
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -280,8 +284,11 @@ export function CampView() {
             <div className="station-overlay">{roles.map((role) => {
               const anchor = anchors[role.id];
               if (!anchor) return null;
-              const top = anchor.canvas.top + Math.min(anchor.footY + 24 * anchor.canvas.width / loadCampLayout().width, anchor.canvas.height - 20);
-              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ left: anchor.canvas.left + anchor.x, top }} onClick={() => select(role.id)} title={roleName(role, locale)}>
+              const layout = loadCampLayout();
+              const scale = anchor.canvas.width / layout.width;
+              const seat = layout.workstations?.stations[role.id]?.seat ?? { x: anchor.x / scale, y: anchor.footY / scale };
+              const rect = stationLabelRect(seat, anchor.canvas.width, anchor.canvas.height, layout.width, Object.values(layout.workstations?.stations ?? {}).map((station) => station.seat));
+              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ ...rect, left: anchor.canvas.left + rect.left, top: anchor.canvas.top + rect.top }} onClick={() => select(role.id)} title={roleName(role, locale)}>
                 <span>{roleName(role, locale)}</span><i className={`status-dot run-dot--${runs[role.id]?.status ?? "idle"}`} />
               </button>;
             })}</div>

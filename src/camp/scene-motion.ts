@@ -39,7 +39,7 @@ export class SceneMotion {
     if (plan?.status === "aborted") { this.queue = []; this.active = null; this.routes.clear(); }
     for (const general of this.generals) {
       const { status } = roleActivity(general.role.id, plan, runs[general.role.id], general.role.role_type === "reviewer");
-      const kind = workAction(plan?.status === "aborted" ? "stopped" : status);
+      const kind = workAction(status);
       const previous = this.actions.get(general.role.id);
       if (previous?.kind !== kind) this.actions.set(general.role.id, { kind, seconds: !previous && kind === "done" ? 10 : 0, walking: false });
       const state: GeneralState = ["running", "checking", "reviewing"].includes(status) ? "running"

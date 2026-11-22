@@ -24,3 +24,8 @@ export function workPose(action: WorkAction, seconds: number, phase: number, red
 }
 
 export type WorkPose = ReturnType<typeof workPose>;
+
+export function workFrame(pose: WorkPose): number | null {
+  if (pose.action === "typing") return pose.left ? 1 : pose.right ? 2 : 0;
+  return pose.action === "checking" || pose.action === "reviewing" ? 3 : null;
+}

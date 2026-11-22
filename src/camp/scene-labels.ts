@@ -1,5 +1,19 @@
 export interface SceneLabel { id: string; left: number; top: number; width: number; height: number }
 
+// Names belong to desks, not to the travelling messenger. Reserve a footer
+// below the feet and keep the rightmost name's whole box inside the canvas.
+export function stationLabelRect(seat: { x: number; y: number }, width: number, height: number, logicalWidth: number, seats: { x: number; y: number }[] = []) {
+  const scale = width / logicalWidth;
+  const spacing = Math.min(101, ...seats.filter((other) => other.y === seat.y && other.x !== seat.x).map((other) => Math.abs(other.x - seat.x)));
+  const labelWidth = Math.min(96, (spacing - 5) * scale);
+  return {
+    left: Math.round(Math.max(4, Math.min(width - labelWidth - 4, seat.x * scale - labelWidth / 2))),
+    top: Math.round(Math.max(4, Math.min(height - 22, (seat.y + 8) * scale))),
+    width: labelWidth,
+    height: 18,
+  };
+}
+
 export function layoutSceneLabels(labels: SceneLabel[], width: number, height: number): SceneLabel[] {
   const placed: SceneLabel[] = [];
   for (const label of labels) {

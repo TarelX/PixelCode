@@ -14,7 +14,7 @@ const model = await load("../src/camp/collaboration.ts");
 const { planHandoffs, roleActivity, advanceRoute, handoffRoute } = model;
 const actions = await load("../src/camp/work-actions.ts");
 const { SceneMotion } = await load("../src/camp/scene-motion.ts", { "./collaboration": model, "./work-actions": actions });
-const { layoutSceneLabels } = await load("../src/camp/scene-labels.ts");
+const { layoutSceneLabels, stationLabelRect } = await load("../src/camp/scene-labels.ts");
 const task = (id, role_id, status, depends_on = []) => ({ id, role_id, title: id, status, depends_on, input_artifacts: ["contract.md"], output_artifacts: ["contract.md"] });
 const plan = (tasks, status = "executing") => ({ id: "plan", status, plan: { tasks } });
 
@@ -137,4 +137,51 @@ test("work happens at the keyboard, with distinct scheduler actions and no repea
   const still = actions.workPose("typing", 1, 0, true);
   assert.deepEqual(still, actions.workPose("typing", 200, 5, true));
   assert.equal(still.left + still.right + still.lean + still.nod, 0);
+});
+
+test("desk name boxes fit the bottom/right edges at every integer scene scale", async () => {
+  const layout = JSON.parse(await readFile(new URL("../themes/pokemon/camp.json", import.meta.url), "utf8"));
+  for (const scale of [1, 2, 3, 4]) {
+    const width = layout.width * scale, height = layout.height * scale;
+    const seats = Object.values(layout.workstations.stations).map(({ seat }) => seat);
+    const labels = seats.map((seat) => stationLabelRect(seat, width, height, layout.width, seats));
+    for (const [i, label] of labels.entries()) {
+      assert.ok(label.left >= 4 && label.left + label.width <= width - 3);
+      assert.ok(label.top >= 4 && label.top + label.height <= height - 4);
+      for (const other of labels.slice(i + 1)) assert.ok(label.left + label.width <= other.left || other.left + other.width <= label.left
+        || label.top + label.height <= other.top || other.top + other.height <= label.top);
+    }
+    // Lucario is four CJK glyphs: do not fit the box by truncating the name.
+    assert.ok(labels[seats.findIndex((seat) => seat.x === layout.workstations.stations.frontend.seat.x)].width >= 50);
+  }
+});
+
+test("a stopped/failed/completed direct run stays visible after an older plan, but not a newer executing plan", () => {
+  const snapshot = { ...plan([task("old", "architect", "done")], "awaiting_delivery"), created_at: 1000 };
+  for (const status of ["stopped", "failed", "completed"]) {
+    const direct = { task_id: "run-2000-2", prompt: "Latest direct task", status };
+    assert.equal(roleActivity("architect", snapshot, direct).status, status);
+    assert.equal(roleActivity("architect", snapshot, direct).title, "Latest direct task");
+    assert.equal(roleActivity("architect", { ...snapshot, created_at: 3000 }, direct).status, "done");
+    assert.equal(roleActivity("architect", { ...snapshot, ...plan([task("new", "architect", "checking")]) }, direct).status, "checking");
+    const { controller, generals } = motion();
+    controller.update(snapshot, { architect: direct });
+    controller.tick(.05, false);
+    assert.equal(generals[0].workPose.action, actions.workAction(status));
+  }
+  const aborted = { ...snapshot, status: "aborted", plan: { tasks: [task("cancelled", "architect", "running")] } };
+  assert.equal(roleActivity("architect", aborted).status, "stopped");
+  const { controller, generals } = motion();
+  controller.update(aborted, { architect: { task_id: "run-2000-3", prompt: "New task", status: "running" } });
+  controller.tick(.05, false);
+  assert.equal(generals[0].workPose.action, "typing");
+});
+
+test("bespoke desk poses follow taps and reading pauses, never idle or completed travel poses", () => {
+  const frames = new Set();
+  for (let i = 0; i < 120; i++) frames.add(actions.workFrame(actions.workPose("typing", i / 10, 0)));
+  assert.deepEqual([...frames].sort(), [0, 1, 2]);
+  for (const action of ["checking", "reviewing"]) assert.equal(actions.workFrame(actions.workPose(action, 1, 0)), 3);
+  for (const action of ["idle", "waiting", "done", "error", "stopped"]) assert.equal(actions.workFrame(actions.workPose(action, 1, 0)), null);
+  assert.equal(actions.workFrame(actions.workPose("typing", 40, 4, true)), 0);
 });

@@ -10,6 +10,9 @@
 .scene-task[data-status="handoff"], .scene-task[data-status="done"], .scene-task[data-status="completed"] { border-left-color: #8fbb9f; }
 .scene-task[data-status="waiting"], .scene-task[data-status="blocked"], .scene-task[data-status="failed"] { border-left-color: #dfb276; }
 .scene-task.is-selected, .scene-task:hover, .scene-task:focus-visible { border-color: #b4a075; z-index: 3; outline: none; }
+.station-overlay .station-label { transform: none; box-sizing: border-box; justify-content: center; gap: 3px; padding: 1px 2px; line-height: 14px; }
+.station-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.station-label > .status-dot { flex-shrink: 0; }
 .scene-handoffs { padding: 9px 14px 10px; background: #1c232a; border-top: 1px solid #34404b; font-size: 10px; }
 .scene-handoffs__heading { display: flex; align-items: center; gap: 10px; }
 .scene-handoffs__heading strong { color: #c6d3df; font-size: 10px; font-weight: 500; }
