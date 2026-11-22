@@ -19,20 +19,25 @@ export function ComposerPicker({ label, icon, className = "", children }: { labe
     if (menu.current) observer.observe(menu.current);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
-    menu.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"], button:not(:disabled)')?.focus();
     return () => { observer.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
   }, [open]);
   useEffect(() => {
     if (!open) return;
+    const frame = requestAnimationFrame(() => {
+      const selected = menu.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]:not(:disabled)');
+      (selected ?? menu.current?.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus();
+    });
     const outside = (event: PointerEvent) => { if (!menu.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) setOpen(false); };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus(); }
     };
     window.addEventListener("pointerdown", outside);
     window.addEventListener("keydown", key, true);
-    return () => { window.removeEventListener("pointerdown", outside); window.removeEventListener("keydown", key, true); };
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("pointerdown", outside); window.removeEventListener("keydown", key, true); };
   }, [open]);
-  return <div className={`composer-picker ${className}`}><button className="composer-picker__trigger" ref={trigger} aria-expanded={open} aria-controls={open ? id : undefined} aria-haspopup="dialog" onClick={() => setOpen(!open)}><PixelIcon name={icon} /><span>{label}</span><PixelIcon name="chevron" /></button>
+  return <div className={`composer-picker ${className}`}><button className="composer-picker__trigger" ref={trigger} aria-expanded={open} aria-controls={open ? id : undefined} aria-haspopup="dialog" onClick={() => setOpen(!open)} onKeyDown={(event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); setOpen(true); }
+  }}><PixelIcon name={icon} /><span>{label}</span><PixelIcon name="chevron" /></button>
     {open && createPortal(<div ref={menu} id={id} role="dialog" aria-label={label} className="composer-menu" style={position} onClick={(event) => {
       if ((event.target as HTMLElement).closest("button:not(:disabled)")) { setOpen(false); trigger.current?.focus(); }
     }} onKeyDown={(event) => {

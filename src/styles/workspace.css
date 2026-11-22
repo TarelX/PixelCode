@@ -142,7 +142,7 @@ button { color: inherit; }
 .role-roster { flex: 1 0 auto; min-height: 180px; background: transparent; border: 0; }
 .role-roster__head { padding: 12px 14px 7px; align-items: center; }
 .role-roster__head h2 { font-size: 10px; font-weight: 500; margin: 0; color: #b6bec5; }
-.role-roster ul { flex: none; overflow: visible; border: 0; padding: 0 8px; }
+.role-roster ul { display: block; flex: none; overflow: visible; border: 0; padding: 0 8px; }
 .role-roster li { display: flex; align-items: center; position: relative; border: 0; }
 .role-roster__item { padding: 5px 6px; gap: 8px; padding-right: 30px; min-height: 39px; }
 .role-roster__item.is-selected { background: #2b3540; border-color: #3f5164; }

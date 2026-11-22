@@ -3,11 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useRoster, type RoleConfig } from "../camp/roster";
 import { useRuns } from "../camp/run";
+import { readArtifact } from "../orchestrator/artifact-manager";
 import { roleName, roleTitle, useI18n } from "../i18n";
 import type { StoredPlan } from "./plan-layout";
 import { RoleRoster } from "./RoleRoster";
 import { RoleAvatar } from "./components/RoleAvatar";
 import { PixelIcon } from "./components/PixelIcon";
+import { PixelDialog } from "./PixelDialog";
 
 export function AgentPanel({ campId, onOpen, onPlan, children }: { campId: string; onOpen: (role: RoleConfig | null) => void; onPlan: () => void; children: ReactNode }) {
   const { locale, theme } = useI18n();
@@ -16,6 +18,15 @@ export function AgentPanel({ campId, onOpen, onPlan, children }: { campId: strin
   const selected = roles.find((role) => role.id === selectedId);
   const [plan, setPlan] = useState<StoredPlan | null>(null);
   const [error, setError] = useState("");
+  const [viewer, setViewer] = useState<{ content: string; path: string } | null>(null);
+  const [artifactError, setArtifactError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function view(id: string, path: string) {
+    setLoading(true); setArtifactError("");
+    try { setViewer({ ...await readArtifact(id), path }); }
+    catch (reason) { setArtifactError(String(reason)); }
+    finally { setLoading(false); }
+  }
   const revision = Object.values(runs).map((run) => `${run.run_id}:${run.status}`).join(",");
   const refresh = useCallback(async () => {
     try { setPlan(await invoke<StoredPlan | null>("latest_plan", { campId })); setError(""); }
@@ -45,7 +56,8 @@ export function AgentPanel({ campId, onOpen, onPlan, children }: { campId: strin
       {error && <p role="alert">{error}</p>}
     </section>
     <RoleRoster onOpen={onOpen} />
-    <section className="team-artifacts"><h3>{theme.studio.outputs}<span>{artifacts.length}</span></h3>{artifacts.length ? artifacts.map((artifact) => <button key={artifact.id} onClick={onPlan} title={artifact.absolute_path}><PixelIcon name="folder" /><span>{artifact.file_path.split(/[/\\]/).pop()}</span><i className="status-dot" /></button>) : <p>{theme.studio.noOutputs}</p>}</section>
+    <section className="team-artifacts"><h3>{theme.studio.outputs}<span>{artifacts.length}</span></h3>{artifacts.length ? artifacts.map((artifact) => <button key={artifact.id} disabled={loading} onClick={() => artifact.type === "plan" ? onPlan() : void view(artifact.id, artifact.absolute_path)} title={artifact.absolute_path}><PixelIcon name="folder" /><span>{artifact.file_path.split(/[/\\]/).pop()}</span><i className="status-dot" /></button>) : <p>{theme.studio.noOutputs}</p>}{artifactError && <p role="alert">{artifactError}</p>}</section>
     <div className="agent-panel__footer">{children}</div>
+    <PixelDialog open={viewer !== null} title={theme.artifactTitle} closeLabel={theme.artifactClose} onClose={() => setViewer(null)}><p className="artifact-location">{viewer?.path}</p><pre className="artifact-content">{viewer?.content}</pre></PixelDialog>
   </aside>;
 }
