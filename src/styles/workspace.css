@@ -82,6 +82,7 @@ button:disabled { cursor: not-allowed; }
 .workbench-tabs .pixel-icon { width: 14px; height: 14px; flex-basis: 14px; }
 .workbench-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 278px; }
 .workbench-center { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; padding: 18px 22px 0; }
+.workbench-activity { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
 .collaboration-scene { flex-shrink: 0; border: 1px solid var(--ui-border); margin-bottom: 16px; background: var(--ui-sidebar); }
 .collaboration-scene > header, .activity-feed > header { height: 41px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 14px; font-size: 12px; }
 .collaboration-scene > header { border-bottom: 1px solid var(--ui-border); }

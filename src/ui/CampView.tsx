@@ -265,6 +265,7 @@ export function CampView() {
       {(roleError || error) && <p role="alert">{roleError ? theme.rosterError + roleError
         : error && theme[error[0]] + (error[1] instanceof MissingAssetError ? theme.missingAsset + error[1].message : String(error[1]))}</p>}
       <div className="workbench-grid"><div className="workbench-center">
+        <div className="workbench-activity" hidden={tab === "tasks" || tab === "council"}>
         <section className="collaboration-scene" hidden={tab !== "agents"}>
           <header><strong>{theme.studio.collaboration}</strong><span className="live-label"><i className="status-dot" />{theme.studio.live}</span><button onClick={() => setSceneOpen(!sceneOpen)}>{sceneOpen ? theme.studio.hideScene : theme.studio.showScene}<PixelIcon name="chevron" /></button></header>
           <div className="camp-map" hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
@@ -281,6 +282,7 @@ export function CampView() {
           {sceneOpen && <SceneHandoffs plan={plan} roles={roles} handoff={handoff} error={sceneError} onPlan={() => setTab("tasks")} />}
         </section>
         <div className="workbench-feed" hidden={tab === "tasks" || tab === "council"}><RunFeed onPlan={() => setTab("tasks")} /></div>
+        </div>
         <div className="workbench-board" hidden={tab !== "tasks"}>{camp && <TaskBoard key={camp.id} campId={camp.id} />}</div>
         <div className="workbench-council" hidden={tab !== "council"}>{camp && <CouncilPanel key={`council-${camp.id}`} campId={camp.id} ready={listening} onPlan={() => setTab("tasks")} />}</div>
         <div className="workbench-composer" hidden={tab === "tasks" || tab === "council"}>{camp && <TaskPanel key={`task-${camp.id}`} campId={camp.id} ready={listening} onConfigure={() => openCard(roles.find((role) => role.id === selectedId) ?? null)} />}</div>
