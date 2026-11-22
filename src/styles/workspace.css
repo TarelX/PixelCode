@@ -124,11 +124,12 @@ button:disabled { cursor: not-allowed; }
 .workbench-board, .workbench-council { flex: 1; min-height: 0; overflow: auto; padding: 0 0 18px; }
 .workbench-composer { flex-shrink: 0; padding-top: 12px; }
 .task-composer { position: relative; margin: 0; padding: 0; border: 0; background: transparent; }
-.task-composer > textarea { display: block; padding: 15px 15px 42px; height: 118px; min-height: 104px; max-height: 220px; resize: vertical; border: 1px solid #515d48; background: #1d231c; font-size: 13px; line-height: 1.8; }
-.task-composer > textarea:focus { outline: 1px solid var(--ui-accent); outline-offset: -1px; background: #20271e; }
-.task-composer > textarea::placeholder { color: #9aa590; }
-.composer-team { position: absolute; top: 81px; right: 12px; display: flex; gap: 4px; }
-.task-composer .composer-team button { display: grid; place-items: center; padding: 0 4px; background: transparent; border-color: transparent; height: 28px; }
+.composer-input { position: relative; }
+.composer-input > textarea { display: block; padding: 15px 15px 56px; height: 132px; min-height: 118px; max-height: 220px; resize: vertical; border: 1px solid #515d48; background: #1d231c; font-size: 13px; line-height: 1.8; }
+.composer-input > textarea:focus { outline: 1px solid var(--ui-accent); outline-offset: -1px; background: #20271e; }
+.composer-input > textarea::placeholder { color: #9aa590; }
+.composer-team { position: absolute; bottom: 8px; right: 12px; max-width: calc(100% - 24px); display: flex; gap: 4px; overflow-x: auto; }
+.task-composer .composer-team button { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 3px; background: transparent; border-color: transparent; }
 .task-composer .composer-team button[aria-pressed="true"] { background: #35432c; border-color: #6a8057; }
 .composer-toolbar { display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 7px 10px; border: 1px solid #515d48; border-top: 0; background: #222920; }
 .composer-picker { position: relative; min-width: 0; }
@@ -265,8 +266,7 @@ button:disabled { cursor: not-allowed; }
   .workspace-metrics { flex-direction: row; }
   .workbench-center { padding-top: 12px; }
   .collaboration-scene { margin-bottom: 8px; }
-  .task-composer > textarea { height: 104px; }
-  .composer-team { top: 68px; }
+  .composer-input > textarea { height: 118px; }
   .activity-empty { min-height: 70px; padding: 10px; }
 }
 @media (max-width: 1000px) {

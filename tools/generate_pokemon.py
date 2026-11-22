@@ -4,6 +4,7 @@ Pokémon © Nintendo/Game Freak/Creatures. Upstream supplies no license.
 Run from any directory: python3 tools/generate_pokemon.py
 """
 from io import BytesIO
+import json
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -34,7 +35,14 @@ def sheet(raw):
 
 
 if __name__ == "__main__":
+    avatar_bounds = {}
     for dex, name in POKEMON.items():
         with urlopen(f"{SOURCE}/images/pixel/{dex}.png", timeout=30) as response:
-            sheet(response.read()).save(OUT / f"{name}.png")
+            image = sheet(response.read())
+            image.save(OUT / f"{name}.png")
+            x1, y1, x2, y2 = image.crop((0, 0, FRAME_WIDTH, FRAME_HEIGHT)).getbbox()
+            avatar_bounds[f"{name}.png"] = [x1, y1, x2 - x1, y2 - y1]
         print(f"{name}: {FRAME_WIDTH * 4}x{FRAME_HEIGHT}")
+    (OUT.parents[1] / "themes/pokemon/avatar-bounds.json").write_text(
+        json.dumps(avatar_bounds, indent=2, sort_keys=True) + "\n"
+    )

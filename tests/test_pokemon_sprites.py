@@ -2,6 +2,7 @@
 from io import BytesIO
 from pathlib import Path
 import importlib.util
+import json
 import unittest
 
 from PIL import Image, UnidentifiedImageError
@@ -13,6 +14,14 @@ spec.loader.exec_module(pokemon)
 
 
 class SpriteBakerTests(unittest.TestCase):
+    def test_avatar_bounds_match_visible_pixels_in_every_first_frame(self):
+        bounds = json.loads((ROOT / "themes/pokemon/avatar-bounds.json").read_text())
+        self.assertEqual(set(bounds), {f"{name}.png" for name in pokemon.POKEMON.values()})
+        for file, (x, y, width, height) in bounds.items():
+            with self.subTest(file=file):
+                frame = Image.open(pokemon.OUT / file).crop((0, 0, 32, 32))
+                self.assertEqual(frame.getbbox(), (x, y, x + width, y + height))
+
     def test_committed_sheets_have_distinct_unclipped_frames(self):
         for name in pokemon.POKEMON.values():
             with self.subTest(name=name):

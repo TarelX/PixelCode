@@ -97,7 +97,7 @@ export function RoleCard({ role, onDone }: { role: RoleConfig | null; onDone: ()
   return (
     <form className="role-card" noValidate onSubmit={submit} aria-busy={busy}>
       <header className="role-card__hero">
-        <span className="role-card__portrait"><RoleAvatar avatar={draft.avatar} scale={4} /></span>
+        <span className="role-card__portrait"><RoleAvatar avatar={draft.avatar} scale={2} /></span>
         <div className="role-card__identity">
           <span className="section-label">{isNew ? theme.newRoleCardTitle : theme.roleCardTitle}</span>
           <h3>{roleName(draft, locale) || theme.roleName}</h3>
