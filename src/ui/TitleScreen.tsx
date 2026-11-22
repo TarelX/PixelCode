@@ -5,10 +5,15 @@ import { useAppStore, type Camp } from "../app/store";
 import { PixelButton } from "./components/PixelButton";
 import { PixelIcon } from "./components/PixelIcon";
 import { useI18n } from "../i18n";
-import orchard from "../../themes/three-kingdoms/tiles/orchard.png";
+import { RoleAvatar } from "./components/RoleAvatar";
+import { parse } from "yaml";
+import names from "../../themes/three-kingdoms/names.yaml?raw";
+import { avatarFiles } from "../camp/sprites";
+
+const { generals } = parse(names) as { generals: { id: string; name: string; name_en: string }[] };
 
 export function TitleScreen() {
-  const { theme } = useI18n();
+  const { locale, theme } = useI18n();
   const openCamp = useAppStore((s) => s.openCamp);
   const [recent, setRecent] = useState<Camp[]>([]);
   const [busy, setBusy] = useState(false);
@@ -43,13 +48,13 @@ export function TitleScreen() {
   return (
     <main className="screen title-screen">
       <div className="welcome-hero">
+        <div className="welcome-team" aria-hidden="true">{generals.map((general, index) => <span key={general.id} title={locale === "en" ? general.name_en : general.name}><RoleAvatar avatar={avatarFiles[index] ?? null} /></span>)}</div>
         <div className="welcome-copy"><span className="section-label welcome-eyebrow">{theme.welcomeEyebrow}</span>
           <h1>{theme.welcomeTitle[0]}<br /><span>{theme.welcomeTitle[1]}</span></h1>
           <p>{theme.welcomeDescription}</p>
-          <PixelButton variant="primary" disabled={busy} onClick={() => void enterCamp()}><PixelIcon name="plus" />{theme.titleRecruit}<PixelIcon name="arrow" /></PixelButton>
+          <PixelButton variant="primary" disabled={busy} onClick={() => void enterCamp()}><PixelIcon name="folder" />{theme.studio.openProject}<PixelIcon name="arrow" /></PixelButton>
           <small>{theme.openHint}</small>
         </div>
-        <figure className="welcome-art"><img src={orchard} width="384" height="288" alt={theme.orchardAlt} /><figcaption><span />{theme.orchardCaption}<span /></figcaption></figure>
       </div>
       <section className="recent-projects" aria-labelledby="recent-title">
         <div className="section-heading"><h2 id="recent-title">{theme.recentCamps}</h2><span>{recent.length.toString().padStart(2, "0")} / 05</span></div>

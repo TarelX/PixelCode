@@ -8,13 +8,13 @@ import { loadGenerals, placeGenerals, type GeneralSprite } from "../camp/sprites
 import { useRoster, type RoleConfig } from "../camp/roster";
 import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
-import { RoleRoster } from "./RoleRoster";
+import { AgentPanel } from "./AgentPanel";
+import { RunFeed } from "./RunFeed";
 import { TaskPanel } from "./TaskPanel";
 import { CouncilPanel } from "./CouncilPanel";
 import { TaskBoard } from "./TaskBoard";
 import { BattleReportButton } from "./BattleReportButton";
-import { PixelButton } from "./components/PixelButton";
-import { RunBubble } from "./RunBubble";
+import { PixelIcon } from "./components/PixelIcon";
 import { listenToRuns, useRuns } from "../camp/run";
 import type { BubbleAnchor } from "../camp/bubble";
 import { useI18n, roleName } from "../i18n";
@@ -29,6 +29,8 @@ function drawMarker(color: string) {
 export function CampView() {
   const { locale, theme } = useI18n();
   const camp = useAppStore((s) => s.camp);
+  const tab = useAppStore((s) => s.workspaceTab);
+  const setTab = useAppStore((s) => s.setWorkspaceTab);
   const loadRoles = useRoster((s) => s.load);
   const roles = useRoster((s) => s.roles);
   const selectedId = useRoster((s) => s.selectedId);
@@ -42,7 +44,7 @@ export function CampView() {
   const [generalsVersion, setGeneralsVersion] = useState(0);
   const [error, setError] = useState<["campError" | "generalsError", unknown] | null>(null);
   const [card, setCard] = useState<{ role: RoleConfig | null } | null>(null);
-  const [wallOpen, setWallOpen] = useState(false);
+  const [sceneOpen, setSceneOpen] = useState(true);
   const runs = useRuns((s) => s.runs);
   const [listening, setListening] = useState(false);
   const [anchors, setAnchors] = useState<Record<string, BubbleAnchor>>({});
@@ -94,8 +96,12 @@ export function CampView() {
   openCardRef.current = openCard;
 
   useEffect(() => {
-    loadRoles(camp?.id ?? null).catch(() => undefined);
-  }, [camp?.id, loadRoles]);
+    let active = true;
+    void loadRoles(camp?.id ?? null).then((loaded) => {
+      if (active && !loaded.some((role) => role.id === useRoster.getState().selectedId)) select(loaded.find((role) => role.role_type === "captain")?.id ?? loaded[0]?.id ?? null);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [camp?.id, loadRoles, select]);
 
   useEffect(() => {
     setError(null);
@@ -137,12 +143,14 @@ export function CampView() {
           return;
         }
         const scenery = await drawCamp(layout);
+        const foreground = layout.foreground ? await drawCamp({ ...layout, background: layout.foreground }) : new Container();
         if (cancelled) {
           scenery.destroy({ children: true });
+          foreground.destroy({ children: true });
           app.destroy(true, { children: true });
           return;
         }
-        app.stage.addChild(scenery);
+        app.stage.addChild(scenery, foreground);
         host.appendChild(app.canvas);
         ready = true;
         resize();
@@ -196,7 +204,7 @@ export function CampView() {
       marker.visible = false;
       layer.addChild(marker);
       placeGenerals(layer, generals, stations);
-      stage.addChild(layer);
+      stage.addChildAt(layer, 1);
       generalsRef.current = { generals, marker };
       setGeneralsVersion((version) => version + 1);
     }).catch((reason) => {
@@ -219,25 +227,34 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
-      <div className="camp-heading"><div><span className="section-label">{theme.campEyebrow}</span><h1>{camp?.name || theme.campTitle}</h1><p title={camp?.root_path}>{camp?.root_path}</p></div><div className="camp-heading-actions">
-        <span className="camp-ready"><i className="status-dot" />{theme.campLegend}</span>
-        {camp && <BattleReportButton key={camp.id} camp={camp} snapshot={() => appRef.current?.renderer.extract.canvas({ target: appRef.current.stage }) as HTMLCanvasElement | undefined} />}
-      </div></div>
+      <nav className="workbench-tabs" aria-label={theme.workspace.navigation}>
+        <button aria-current={tab === "conversation" ? "page" : undefined} onClick={() => setTab("conversation")}><PixelIcon name="chat" />{theme.studio.conversation}</button>
+        <button aria-current={tab === "agents" ? "page" : undefined} onClick={() => setTab("agents")}><PixelIcon name="team" />{theme.studio.agents}<span className="tab-tag">{roles.length}</span></button>
+        <button aria-current={tab === "tasks" ? "page" : undefined} onClick={() => setTab("tasks")}><PixelIcon name="grid" />{theme.studio.tasks}</button>
+        <button aria-current={tab === "council" ? "page" : undefined} onClick={() => setTab("council")}>{theme.council.title}</button>
+      </nav>
       {(roleError || error) && <p role="alert">{roleError ? theme.rosterError + roleError
         : error && theme[error[0]] + (error[1] instanceof MissingAssetError ? theme.missingAsset + error[1].message : String(error[1]))}</p>}
-      <div className="camp-body">
-        <div className="camp-map"><div className="camp-map__bar"><span><i className="status-dot" />{theme.campMapLabel}</span><span>320 × 180</span></div><div className="camp-canvas" ref={hostRef}>
-          <div className="run-overlay">{Object.entries(runs).map(([id, run]) => anchors[id] && <RunBubble key={id} id={id} run={run} anchor={anchors[id]} />)}</div>
-        </div></div>
-        <RoleRoster onOpen={openCard} />
+      <div className="workbench-grid"><div className="workbench-center">
+        <section className="collaboration-scene" hidden={tab !== "agents"}>
+          <header><strong>{theme.studio.collaboration}</strong><span className="live-label"><i className="status-dot" />{theme.studio.live}</span><button onClick={() => setSceneOpen(!sceneOpen)}>{sceneOpen ? theme.studio.hideScene : theme.studio.showScene}<PixelIcon name="chevron" /></button></header>
+          <div className="camp-map" hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
+            <div className="station-overlay">{roles.map((role) => {
+              const anchor = anchors[role.id];
+              if (!anchor) return null;
+              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ left: anchor.canvas.left + anchor.x, top: anchor.canvas.top + anchor.footY + 24 * anchor.canvas.width / loadCampLayout().width }} onClick={() => select(role.id)} title={roleName(role, locale)}>
+                <span>{roleName(role, locale)}</span><i className={`status-dot run-dot--${runs[role.id]?.status ?? "idle"}`} />
+              </button>;
+            })}</div>
+          </div></div>
+        </section>
+        <div className="workbench-feed" hidden={tab === "tasks" || tab === "council"}><RunFeed onPlan={() => setTab("tasks")} /></div>
+        <div className="workbench-board" hidden={tab !== "tasks"}>{camp && <TaskBoard key={camp.id} campId={camp.id} />}</div>
+        <div className="workbench-council" hidden={tab !== "council"}>{camp && <CouncilPanel key={`council-${camp.id}`} campId={camp.id} ready={listening} onPlan={() => setTab("tasks")} />}</div>
+        <div className="workbench-composer" hidden={tab === "tasks" || tab === "council"}>{camp && <TaskPanel key={`task-${camp.id}`} campId={camp.id} ready={listening} onConfigure={() => openCard(roles.find((role) => role.id === selectedId) ?? null)} />}</div>
       </div>
-      {camp && <TaskPanel key={`task-${camp.id}`} campId={camp.id} ready={listening} />}
-      {camp && <CouncilPanel key={`council-${camp.id}`} campId={camp.id} ready={listening} onPlan={() => setWallOpen(true)} />}
-      {camp && <div><PixelButton onClick={() => setWallOpen(true)}>{theme.wall.title}</PixelButton></div>}
-      <PixelDialog open={wallOpen} title={theme.wall.title} closeLabel={theme.wall.close} onClose={() => setWallOpen(false)}>
-        {wallOpen && camp && <TaskBoard key={camp.id} campId={camp.id} />}
-      </PixelDialog>
-      <p className="camp-caption">{theme.campMapHint}</p>
+      {camp && <AgentPanel campId={camp.id} onOpen={openCard} onPlan={() => setTab("tasks")}><BattleReportButton key={camp.id} camp={camp} snapshot={() => appRef.current?.renderer.extract.canvas({ target: appRef.current.stage }) as HTMLCanvasElement | undefined} /></AgentPanel>}
+      </div>
       <PixelDialog
         open={card !== null}
         title={card?.role ? `${theme.roleCardTitle} · ${roleName(card.role, locale)}` : theme.newRoleCardTitle}

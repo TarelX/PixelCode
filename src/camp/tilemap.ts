@@ -18,6 +18,7 @@ export interface CampLayout {
   tileSize: number;
   groundColor: string;
   background?: string;
+  foreground?: string;
   zones: CampZone[];
 }
 
