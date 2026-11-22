@@ -40,6 +40,8 @@ test("every preset general has a sprite, a theme name and a camp post", async ()
     const sheet = await readFile(new URL(`assets/sprites/${role.avatar}`, root));
     assert.equal(sheet.subarray(1, 4).toString(), "PNG");
     assert.deepEqual([sheet.readUInt32BE(16), sheet.readUInt32BE(20)], [128, 32]);
+    const portrait = await readFile(new URL(`assets/avatars/${role.avatar}`, root));
+    assert.deepEqual([portrait.readUInt32BE(16), portrait.readUInt32BE(20)], [32, 32]);
     assert.ok(camp.zones.some((zone) => zone.role === role.id), `${role.id} has no camp post`);
     assert.ok(role.loadouts.length > 0 && role.loadouts.every(({ cli }) => ["claude-code", "codex"].includes(cli)));
     assert.ok(Object.hasOwn(zh.roleTypes, role.role_type) && Object.hasOwn(en.roleTypes, role.role_type));

@@ -83,7 +83,7 @@ Windows `%APPDATA%`、macOS `~/Library/Application Support`、Linux `~/.local/sh
 
 - 代码与基地场景为本仓库原创，MIT 授权。室内场景由 `python3 tools/generate_command_room.py` 生成；草地与研究所外景由 `python3 tools/generate_pokemon_scenery.py` 生成（需要 Pillow）。
 - 宝可梦像素精灵来自 [NightCatSama/pokedex](https://github.com/NightCatSama/pokedex) 的 `images/pixel/<全国图鉴编号>.png`；上游未提供许可（no license）。Pokémon © Nintendo/Game Freak/Creatures。这些素材不属于本仓库 MIT 许可范围。
-  使用 `python3 tools/generate_pokemon.py` 从固定上游版本下载并生成四帧精灵表（需要 Python 3 + Pillow）。名称来自同版本的 `pokemon.json`。
+  使用 `python3 tools/generate_pokemon.py` 从固定上游版本下载并生成四帧精灵表与居中的 UI 头像（需要 Python 3 + Pillow）。名称来自同版本的 `pokemon.json`。
 - PixelCode 与 Nintendo、Game Freak、Creatures 无隶属、授权或官方关联（not affiliated with Nintendo）。
 - 界面布局参考 [MonoCode](https://www.usemono.dev/) 的清晰分区与 [Godly](https://godly.website/) 的留白和信息层级，
   未复制任何第三方代码或素材。

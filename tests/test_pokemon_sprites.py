@@ -2,7 +2,6 @@
 from io import BytesIO
 from pathlib import Path
 import importlib.util
-import json
 import unittest
 
 from PIL import Image, UnidentifiedImageError
@@ -14,13 +13,17 @@ spec.loader.exec_module(pokemon)
 
 
 class SpriteBakerTests(unittest.TestCase):
-    def test_avatar_bounds_match_visible_pixels_in_every_first_frame(self):
-        bounds = json.loads((ROOT / "themes/pokemon/avatar-bounds.json").read_text())
-        self.assertEqual(set(bounds), {f"{name}.png" for name in pokemon.POKEMON.values()})
-        for file, (x, y, width, height) in bounds.items():
-            with self.subTest(file=file):
-                frame = Image.open(pokemon.OUT / file).crop((0, 0, 32, 32))
-                self.assertEqual(frame.getbbox(), (x, y, x + width, y + height))
+    def test_ui_avatars_center_visible_pixels_without_resizing_scene_art(self):
+        for name in pokemon.POKEMON.values():
+            with self.subTest(name=name):
+                frame = Image.open(pokemon.OUT / f"{name}.png").crop((0, 0, 32, 32))
+                portrait = Image.open(pokemon.AVATAR_OUT / f"{name}.png")
+                self.assertEqual(portrait.size, (32, 32))
+                x1, y1, x2, y2 = portrait.getbbox()
+                self.assertLessEqual(abs(x1 - (32 - x2)), 1)
+                self.assertLessEqual(abs(y1 - (32 - y2)), 1)
+                self.assertEqual(portrait.tobytes(), pokemon.avatar(Image.open(pokemon.OUT / f"{name}.png")).tobytes())
+                self.assertEqual(portrait.crop(portrait.getbbox()).tobytes(), frame.crop(frame.getbbox()).tobytes())
 
     def test_committed_sheets_have_distinct_unclipped_frames(self):
         for name in pokemon.POKEMON.values():

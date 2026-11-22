@@ -1,7 +1,6 @@
 .camp-body { flex: 1; min-height: 240px; display: grid; grid-template-columns: minmax(0, 1fr) 216px; gap: 16px; }
 .camp-body > .camp-map { min-height: 0; }
-.role-avatar { display: inline-block; position: relative; flex-shrink: 0; vertical-align: middle; image-rendering: pixelated; }
-.role-avatar__sprite { display: block; position: absolute; background-repeat: no-repeat; image-rendering: pixelated; }
+.role-avatar { display: inline-block; flex-shrink: 0; vertical-align: middle; image-rendering: pixelated; object-fit: contain; }
 .role-tag { display: inline-flex; align-items: center; padding: 1px 6px; border: 1px solid var(--ui-border); color: var(--ui-muted); font: normal 9px/1.6 ui-monospace, monospace; letter-spacing: .5px; white-space: nowrap; }
 .role-tag--modified_preset { color: var(--ui-warning); border-color: currentColor; }
 .role-tag--custom { color: var(--ui-accent); border-color: currentColor; }
