@@ -125,9 +125,7 @@ export function CampView() {
 
     function resize() {
       if (!ready) return;
-      const scale = Math.max(1, Math.floor(Math.min(
-        host.clientWidth / layout.width, host.clientHeight / layout.height,
-      )));
+      const scale = Math.max(1, Math.floor(host.clientWidth / layout.width));
       app.stage.scale.set(scale);
       app.renderer.resize(layout.width * scale, layout.height * scale, resolution);
       app.canvas.style.width = `${layout.width * scale}px`;
@@ -269,7 +267,8 @@ export function CampView() {
         <section className="collaboration-scene" hidden={tab !== "agents"}>
           <header><strong>{theme.studio.collaboration}</strong><span className="live-label"><i className="status-dot" />{theme.studio.live}</span><button onClick={() => setSceneOpen(!sceneOpen)}>{sceneOpen ? theme.studio.hideScene : theme.studio.showScene}<PixelIcon name="chevron" /></button></header>
           <div className="camp-map" hidden={!sceneOpen}><div className="camp-canvas" ref={hostRef}>
-            <SceneTasks roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
+            <SceneTasks placement="top" roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
+            <SceneTasks placement="bottom" roles={roles} runs={runs} plan={plan} anchors={anchors} selectedId={selectedId} handoff={handoff} onSelect={select} />
             <div className="station-overlay">{roles.map((role) => {
               const anchor = anchors[role.id];
               if (!anchor) return null;
