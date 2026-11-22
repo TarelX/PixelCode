@@ -271,10 +271,14 @@ button:disabled { cursor: not-allowed; }
 @media (max-height: 1100px) {
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) { padding-top: 12px; }
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .workbench-composer { padding-top: 6px; }
-  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-input > textarea { height: 80px; min-height: 80px; padding: 12px 14px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-input > textarea { height: 66px; min-height: 66px; padding: 8px 14px; }
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-team,
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-caption { display: none; }
   .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-toolbar { min-height: 40px; padding-block: 4px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .activity-feed > header { height: 34px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .activity-scroll { padding-block: 2px 6px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .feed-message { padding-block: 6px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .feed-message pre { margin-block: 4px; line-height: 1.7; }
 }
 @media (max-width: 1000px) {
   .project-sidebar { width: 182px; flex-basis: 182px; }
