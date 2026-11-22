@@ -3,7 +3,7 @@
 给在本仓库工作的 AI 开发 Agent（如 Devin）。**开工前先读 `docs/PIXELCODE_SPEC.md`，以规格为准，规格未写的功能不做。**
 
 ## 项目一句话
-本地桌面应用（Tauri 2 + Rust + React 19 + TypeScript）：用三国名将组成的像素 AI 团队，调度用户已登录的 Claude Code / Codex CLI 完成编码任务。主界面是像素军营。**不卖模型额度，不读取、不保存、不传输用户的 API Key。**
+本地桌面应用（Tauri 2 + Rust + React 19 + TypeScript）：用宝可梦伙伴组成的像素 AI 团队，调度用户已登录的 Claude Code / Codex CLI 完成编码任务。主界面是像素伙伴基地。**不卖模型额度，不读取、不保存、不传输用户的 API Key。**
 
 ## 常用命令
 ```bash
@@ -56,7 +56,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - 应用内不得宣称与任何第三方游戏或品牌官方相关。
 
 ## 当前状态
-骨架已搭好：Tauri 2 + React 19 + zustand + pixi.js，目录按规格 §11，7 个预设角色 YAML、`three-kingdoms` 主题、6 个技能占位、CI。**所有业务模块仍是空占位**，从阶段 A 开始实现。
+骨架已搭好：Tauri 2 + React 19 + zustand + pixi.js，目录按规格 §11，7 个预设角色 YAML、`pokemon` 主题、6 个技能占位、CI。**所有业务模块仍是空占位**，从阶段 A 开始实现。
 
 ## 阶段 A 任务清单（按顺序，每项一个 PR）
 1. **SQLite 初始化**：`src-tauri/src/db.rs`，在应用数据目录创建库并建 `camps / roles / tasks / plans / artifacts / messages / app_settings` 表（规格 §10），带迁移版本号与单元测试。

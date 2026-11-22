@@ -1,0 +1,8 @@
+generals:
+  - { id: captain, name: 皮卡丘, name_en: Pikachu, title: 电光队长, title_en: Spark Captain, avatar: pikachu.png }
+  - { id: architect, name: 巨金怪, name_en: Metagross, title: 钢铁架构师, title_en: Steel Architect, avatar: metagross.png }
+  - { id: web-designer, name: 图图犬, name_en: Smeargle, title: 灵感画师, title_en: Creative Designer, avatar: smeargle.png }
+  - { id: frontend, name: 路卡利欧, name_en: Lucario, title: 波导前端, title_en: Aura Frontender, avatar: lucario.png }
+  - { id: backend, name: 怪力, name_en: Machamp, title: 四臂后盾, title_en: Four-Armed Backend, avatar: machamp.png }
+  - { id: debugger, name: 多边兽, name_en: Porygon, title: 数据侦探, title_en: Data Detective, avatar: porygon.png }
+  - { id: reviewer, name: 胡地, name_en: Alakazam, title: 念力审查员, title_en: Psychic Reviewer, avatar: alakazam.png }

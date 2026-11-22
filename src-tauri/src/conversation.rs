@@ -53,16 +53,16 @@ fn participants(
     request: &str,
 ) -> Result<(Vec<Participant>, String), String> {
     if request.trim().is_empty() {
-        return Err("军议需求不能为空".into());
+        return Err("作战会议需求不能为空".into());
     }
     if !(2..=4).contains(&ids.len()) || ids.iter().collect::<HashSet<_>>().len() != ids.len() {
-        return Err("军议须选择二至四名不同的名将".into());
+        return Err("作战会议须选择二至四名不同的伙伴".into());
     }
     let roster = roles::effective_roles(conn, Some(camp))?;
     let captain = roster
         .iter()
         .find(|r| r.role_type == "captain")
-        .ok_or("大营中没有可汇总军议的队长")?
+        .ok_or("基地中没有可汇总作战会议的队长")?
         .id
         .clone();
     let participants = ids
@@ -71,7 +71,7 @@ fn participants(
             let role = roster
                 .iter()
                 .find(|r| &r.id == id)
-                .ok_or_else(|| format!("大营中未找到军议名将：{id}"))?;
+                .ok_or_else(|| format!("基地中未找到作战会议伙伴：{id}"))?;
             Ok(Participant {
                 id: id.clone(),
                 name: role.name.clone(),
@@ -93,7 +93,7 @@ impl Session<'_> {
         let lock = || {
             self.conn
                 .lock()
-                .map_err(|_| "无法访问大营数据库".to_string())
+                .map_err(|_| "无法访问基地数据库".to_string())
         };
         let (participants, captain) = participants(&*lock()?, self.camp, ids, request)?;
         let mut transcript = Vec::new();
@@ -118,7 +118,7 @@ impl Session<'_> {
                 };
                 lock()?.execute("INSERT INTO messages (id,task_id,role,type,content,payload_json,created_at) VALUES (?1,?2,'assistant','discussion',?3,?4,?5)",
                     params![format!("{}-{}", self.id, transcript.len()), self.id, turn.text, serde_json::json!({"role_id": turn.role_id, "round": round}).to_string(), self.millis])
-                    .map_err(|e| format!("无法保存军议发言：{e}"))?;
+                    .map_err(|e| format!("无法保存作战会议发言：{e}"))?;
                 runner.turn(&turn)?;
                 transcript.push(turn);
             }
@@ -189,7 +189,7 @@ impl Runner for LiveRunner<'_> {
                         update,
                     },
                 )
-                .map_err(|e| format!("无法发送军议运行事件：{e}"))
+                .map_err(|e| format!("无法发送作战会议运行事件：{e}"))
         };
         let result = supervisor::dispatch(
             &config.cli,
@@ -230,7 +230,7 @@ impl Runner for LiveRunner<'_> {
                     message: None,
                 },
             )
-            .map_err(|e| format!("无法发送军议发言：{e}"))
+            .map_err(|e| format!("无法发送作战会议发言：{e}"))
     }
 }
 #[tauri::command]
@@ -244,7 +244,7 @@ pub async fn start_conversation(
         let slot = window.state::<RunSlot>();
         let _active = slot.acquire()?;
         let conn = window.state::<Mutex<Connection>>();
-        let cwd = camps::run_root(&*conn.lock().map_err(|_| "无法访问大营数据库")?, &camp_id)?;
+        let cwd = camps::run_root(&*conn.lock().map_err(|_| "无法访问基地数据库")?, &camp_id)?;
         let root = window.state::<artifacts::ArtifactRoot>();
         let millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -283,16 +283,16 @@ pub async fn start_conversation(
                     message: result.as_ref().err().map(String::as_str),
                 },
             )
-            .map_err(|e| format!("无法发送军议结果：{e}"))?;
+            .map_err(|e| format!("无法发送作战会议结果：{e}"))?;
         if matches!(result, Ok(true)) {
             window
                 .emit_to(window.label(), "plan-state", &camp_id)
-                .map_err(|e| format!("无法刷新锦囊墙：{e}"))?;
+                .map_err(|e| format!("无法刷新计划卡墙：{e}"))?;
         }
         result.map(|_| ())
     })
     .await
-    .map_err(|e| format!("军议运行失败：{e}"))?
+    .map_err(|e| format!("作战会议运行失败：{e}"))?
 }
 
 #[cfg(test)]

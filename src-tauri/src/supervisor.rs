@@ -230,7 +230,7 @@ pub async fn start_role_run(
         let _active = state.acquire()?;
         let (cwd, mut config, roster) = {
             let state = window.state::<Mutex<Connection>>();
-            let connection = state.lock().map_err(|_| "无法访问大营数据库")?;
+            let connection = state.lock().map_err(|_| "无法访问基地数据库")?;
             let cwd = camps::run_root(&connection, &camp_id)?;
             let config = roles::run_config(&connection, &camp_id, &role_id, loadout_index)?;
             let roster = config

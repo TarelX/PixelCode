@@ -4,13 +4,13 @@ use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 
 const PRESETS: &[&str] = &[
-    include_str!("../../roles/diaochan.yaml"),
-    include_str!("../../roles/guanyu.yaml"),
-    include_str!("../../roles/kongming.yaml"),
-    include_str!("../../roles/lvbu.yaml"),
-    include_str!("../../roles/pangtong.yaml"),
-    include_str!("../../roles/xushu.yaml"),
-    include_str!("../../roles/zhangzhao.yaml"),
+    include_str!("../../roles/smeargle.yaml"),
+    include_str!("../../roles/machamp.yaml"),
+    include_str!("../../roles/pikachu.yaml"),
+    include_str!("../../roles/lucario.yaml"),
+    include_str!("../../roles/metagross.yaml"),
+    include_str!("../../roles/porygon.yaml"),
+    include_str!("../../roles/alakazam.yaml"),
 ];
 const SKILLS: &[(&str, &str)] = &[
     (
@@ -175,7 +175,7 @@ fn validate(role: &RoleConfig) -> Result<(), String> {
             .iter()
             .any(|l| !matches!(l.cli.as_str(), "claude-code" | "codex"))
     {
-        return Err("角色至少需要一个武器槽，CLI 仅支持 claude-code 或 codex".into());
+        return Err("角色至少需要一个搭档配置，CLI 仅支持 claude-code 或 codex".into());
     }
     if let Some(skill) = role
         .skills
@@ -195,11 +195,109 @@ fn json<T: Serialize>(value: &T) -> Result<String, String> {
     serde_json::to_string(value).map_err(|error| format!("无法编码角色配置：{error}"))
 }
 
+const LEGACY_PRESENTATION: &[(&str, [&str; 5])] = &[
+    (
+        "captain",
+        [
+            "诸葛亮",
+            "Zhuge Liang",
+            "队长",
+            "kongming.png",
+            "你是诸葛亮，队长，负责理解需求、拆解锦囊、分派名将并汇总结果，只规划不动手改代码。",
+        ],
+    ),
+    (
+        "architect",
+        [
+            "庞统",
+            "Pang Tong",
+            "架构师",
+            "pangtong.png",
+            "你是庞统，架构师，负责系统设计与接口约定，产出 architecture.md 与 api-contract.md。",
+        ],
+    ),
+    (
+        "web-designer",
+        [
+            "貂蝉",
+            "Diao Chan",
+            "网页设计师",
+            "diaochan.png",
+            "你是貂蝉，网页设计师，负责 UI/UX 设计与设计稿描述，产出 design.md 与 wireframe.md。",
+        ],
+    ),
+    (
+        "frontend",
+        [
+            "吕布",
+            "Lü Bu",
+            "前端工程师",
+            "lvbu.png",
+            "你是吕布，前端工程师，负责依据设计稿与接口约定实现前端代码并补充测试。",
+        ],
+    ),
+    (
+        "backend",
+        [
+            "关羽",
+            "Guan Yu",
+            "后端工程师",
+            "guanyu.png",
+            "你是关羽，后端工程师，负责依据接口约定实现后端代码与 API 并补充测试。",
+        ],
+    ),
+    (
+        "debugger",
+        [
+            "徐庶",
+            "Xu Shu",
+            "调试员",
+            "xushu.png",
+            "你是徐庶，调试员，负责复现 bug、定位根因并给出最小修复，产出 repro.md 与 fix.md。",
+        ],
+    ),
+    (
+        "reviewer",
+        [
+            "张昭",
+            "Zhang Zhao",
+            "审查员",
+            "zhangzhao.png",
+            "你是张昭，审查员，只读审查代码质量、安全性与规范，输出通过或打回并列出问题清单。",
+        ],
+    ),
+];
+
+fn upgrade_preset_presentation(
+    connection: &Connection,
+    presets: &[RoleConfig],
+) -> Result<(), String> {
+    for (id, old) in LEGACY_PRESENTATION {
+        let preset = presets.iter().find(|role| role.id == *id).unwrap();
+        for (column, old, new) in [
+            ("name", old[0], Some(preset.name.as_str())),
+            ("name_en", old[1], preset.name_en.as_deref()),
+            ("title", old[2], preset.title.as_deref()),
+            ("avatar", old[3], preset.avatar.as_deref()),
+            ("personality", old[4], Some(preset.personality.as_str())),
+        ] {
+            connection
+                .execute(
+                    &format!("UPDATE roles SET {column} = ?1 WHERE id = ?2 AND {column} = ?3"),
+                    params![new, id, old],
+                )
+                .map_err(database_error)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn effective_roles(
     connection: &Connection,
     camp_id: Option<&str>,
 ) -> Result<Vec<RoleConfig>, String> {
     let mut roles = presets()?;
+    upgrade_preset_presentation(connection, &roles)?;
     let mut statement = connection
         .prepare(
             "SELECT id, role_type, name, name_en, title, avatar, personality,
@@ -269,7 +367,7 @@ pub(crate) fn run_config(
     let loadout = role
         .loadouts
         .get(loadout_index)
-        .ok_or("未找到角色的武器槽")?;
+        .ok_or("未找到角色的搭档配置")?;
     if matches!(role.role_type.as_str(), "captain" | "reviewer") {
         role.permissions.clamp_read_only();
     }
@@ -557,6 +655,49 @@ pub(crate) mod tests {
         assert!(config.permissions.allow.iter().any(|tool| tool == "Write"));
         assert!(!config.permissions.deny.iter().any(|tool| tool == "Bash"));
         assert!(run_config(&connection, "camp", "missing", 0).is_err());
+    }
+
+    #[test]
+    fn legacy_presentation_upgrades_without_overwriting_custom_fields() {
+        let connection = connection();
+        let presets = presets().unwrap();
+        for (id, old) in LEGACY_PRESENTATION {
+            let mut role = presets.iter().find(|role| role.id == *id).unwrap().clone();
+            role.name = old[0].into();
+            role.name_en = Some(old[1].into());
+            role.title = Some(old[2].into());
+            role.avatar = Some(old[3].into());
+            role.personality = old[4].into();
+            upsert(&connection, &role, None).unwrap();
+            role.name = "My partner".into();
+            role.personality = "My custom persona".into();
+            role.loadouts[0].model = "custom-model".into();
+            upsert(&connection, &role, Some("camp")).unwrap();
+        }
+        for role in effective_roles(&connection, None).unwrap() {
+            let preset = presets.iter().find(|preset| preset.id == role.id).unwrap();
+            assert_eq!(role.name, preset.name);
+            assert_eq!(role.name_en, preset.name_en);
+            assert_eq!(role.title, preset.title);
+            assert_eq!(role.avatar, preset.avatar);
+            assert_eq!(role.personality, preset.personality);
+        }
+        for role in effective_roles(&connection, Some("camp")).unwrap() {
+            let preset = presets.iter().find(|preset| preset.id == role.id).unwrap();
+            assert_eq!(role.name, "My partner");
+            assert_eq!(role.personality, "My custom persona");
+            assert_eq!(role.loadouts[0].model, "custom-model");
+            assert_eq!(role.avatar, preset.avatar);
+        }
+        assert_eq!(effective_roles(&connection, None).unwrap().len(), 7);
+        let stored: String = connection
+            .query_row(
+                "SELECT name FROM roles WHERE id = 'captain' AND camp_id IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "皮卡丘");
     }
 
     #[test]

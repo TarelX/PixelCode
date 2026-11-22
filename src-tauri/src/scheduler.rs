@@ -41,7 +41,7 @@ trait Runner: Sync {
 }
 
 fn db_error(error: rusqlite::Error) -> String {
-    format!("无法更新锦囊执行记录：{error}")
+    format!("无法更新计划卡执行记录：{error}")
 }
 
 fn approve(
@@ -55,14 +55,14 @@ fn approve(
         .map_err(db_error)?;
     let mut plan = plans::latest(&tx, camp)?
         .filter(|stored| stored.id == id && stored.status == "draft")
-        .ok_or("只有当前大营最新的待点将草案可以批准")?
+        .ok_or("只有当前基地最新的待出战草案可以批准")?
         .plan;
     let roster = roles::planning_roster(&tx, camp)?;
     plan.assign(assignments, &roster)?;
     for task in &mut plan.tasks {
         task.status = Some("pending".into());
     }
-    let json = serde_json::to_string(&plan).map_err(|e| format!("无法编码锦囊计划：{e}"))?;
+    let json = serde_json::to_string(&plan).map_err(|e| format!("无法编码计划卡计划：{e}"))?;
     tx.execute(
         "UPDATE plans SET status='executing',plan_json=?2 WHERE id=?1",
         params![id, json],
@@ -110,7 +110,7 @@ fn order(plan: &Plan) -> Result<Vec<usize>, String> {
     while result.len() < plan.tasks.len() {
         let next = (0..plan.tasks.len())
             .find(|&i| incoming[i] == 0 && !result.contains(&i))
-            .ok_or("锦囊依赖存在循环或缺失")?;
+            .ok_or("计划卡依赖存在循环或缺失")?;
         result.push(next);
         for (i, task) in plan.tasks.iter().enumerate() {
             if task.depends_on.contains(&plan.tasks[next].id) {
@@ -141,14 +141,14 @@ fn status(
         )
         .map_err(db_error)?;
     let mut plan: Plan =
-        serde_json::from_str(&json).map_err(|e| format!("无法读取锦囊计划：{e}"))?;
+        serde_json::from_str(&json).map_err(|e| format!("无法读取计划卡计划：{e}"))?;
     let task = plan
         .tasks
         .iter_mut()
         .find(|task| format!("{}-{}", event.plan_id, task.id) == event.task_id)
-        .ok_or("计划中未找到此锦囊")?;
+        .ok_or("计划中未找到此计划卡")?;
     task.status = Some(next.into());
-    let json = serde_json::to_string(&plan).map_err(|e| format!("无法编码锦囊计划：{e}"))?;
+    let json = serde_json::to_string(&plan).map_err(|e| format!("无法编码计划卡计划：{e}"))?;
     tx.execute(
         "UPDATE plans SET plan_json=?2 WHERE id=?1",
         params![event.plan_id, json],
@@ -212,7 +212,7 @@ const MAX_PARALLEL: usize = 3;
 static INTEGRATION: Mutex<()> = Mutex::new(());
 
 fn database(conn: &Mutex<Connection>) -> Result<MutexGuard<'_, Connection>, String> {
-    conn.lock().map_err(|_| "无法访问大营数据库".into())
+    conn.lock().map_err(|_| "无法访问基地数据库".into())
 }
 
 struct Execution<'a, R> {
@@ -372,7 +372,7 @@ impl<R: Runner> Execution<'_, R> {
                         }
                     }
                     if !found {
-                        return Err(format!("已完成的依赖锦囊缺少输入产物：{name}"));
+                        return Err(format!("已完成的依赖计划卡缺少输入产物：{name}"));
                     }
                 }
             }
@@ -428,7 +428,7 @@ impl<R: Runner> Execution<'_, R> {
                     self.status(
                         &mut event,
                         "blocked",
-                        Some(format!("无法把改动并入大营：{error}")),
+                        Some(format!("无法把改动并入基地：{error}")),
                     )?;
                     return Ok(false);
                 }
@@ -469,7 +469,7 @@ impl<R: Runner> Execution<'_, R> {
                             return Ok(Attempt::Blocked(format!("审查未通过：{reason}")));
                         }
                     } else {
-                        let reviewer = reviewer.ok_or("大营缺少审查员角色")?;
+                        let reviewer = reviewer.ok_or("基地缺少审查员角色")?;
                         self.status(&mut event, "reviewing", None)?;
                         let text = self.runner.run(&reviewer.id, &format!("审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"), cwd)?;
                         if self.runner.stopped() {
@@ -497,7 +497,7 @@ impl<R: Runner> Execution<'_, R> {
                     self.status(
                         &mut event,
                         "blocked",
-                        Some(format!("无法撤回大营改动：{error}")),
+                        Some(format!("无法撤回基地改动：{error}")),
                     )?;
                     return Ok(false);
                 }
@@ -598,7 +598,7 @@ impl Runner for LiveRunner<'_> {
     fn emit(&self, event: &TaskEvent) -> Result<(), String> {
         self.window
             .emit_to(self.window.label(), "plan-task", event)
-            .map_err(|e| format!("无法发送锦囊状态事件：{e}"))
+            .map_err(|e| format!("无法发送计划卡状态事件：{e}"))
     }
 }
 
@@ -617,7 +617,7 @@ pub async fn approve_plan_execution(
             .app_data_dir()
             .map_err(|e| format!("无法访问应用数据目录：{e}"))?;
         let mut conn =
-            crate::db::open(&data_dir).map_err(|e| format!("无法访问大营数据库：{e}"))?;
+            crate::db::open(&data_dir).map_err(|e| format!("无法访问基地数据库：{e}"))?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(db_error)?;
         let cwd = camps::run_root(&conn, &camp_id)?;
@@ -652,7 +652,7 @@ pub async fn approve_plan_execution(
         result
     })
     .await
-    .map_err(|e| format!("锦囊执行失败：{e}"))?
+    .map_err(|e| format!("计划卡执行失败：{e}"))?
 }
 
 #[cfg(test)]
@@ -1415,7 +1415,7 @@ mod tests {
                     |r| r.get(0),
                 )
                 .unwrap();
-            assert!(message.contains("无法把改动并入大营"));
+            assert!(message.contains("无法把改动并入基地"));
         } else {
             for i in 0..count {
                 assert_eq!(state(&conn, &format!("t{i}")).0, "done");

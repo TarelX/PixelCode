@@ -3,8 +3,8 @@ import { MissingAssetError } from "./asset-error";
 import { clipFrames, clipSpeed, stateAnimations, type Bubble, type GeneralState } from "./animations";
 import type { RoleConfig } from "./roster";
 
-export const FRAME_WIDTH = 16;
-export const FRAME_HEIGHT = 24;
+export const FRAME_WIDTH = 32;
+export const FRAME_HEIGHT = 32;
 const SHEET_FRAMES = 4;
 
 const spriteFiles = import.meta.glob<string>("/assets/sprites/*.png", { query: "?url", import: "default", eager: true });
