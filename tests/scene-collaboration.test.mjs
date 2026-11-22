@@ -12,7 +12,8 @@ async function load(path, dependencies = {}) {
 }
 const model = await load("../src/camp/collaboration.ts");
 const { planHandoffs, roleActivity, advanceRoute, handoffRoute } = model;
-const { SceneMotion } = await load("../src/camp/scene-motion.ts", { "./collaboration": model });
+const actions = await load("../src/camp/work-actions.ts");
+const { SceneMotion } = await load("../src/camp/scene-motion.ts", { "./collaboration": model, "./work-actions": actions });
 const { layoutSceneLabels } = await load("../src/camp/scene-labels.ts");
 const task = (id, role_id, status, depends_on = []) => ({ id, role_id, title: id, status, depends_on, input_artifacts: ["contract.md"], output_artifacts: ["contract.md"] });
 const plan = (tasks, status = "executing") => ({ id: "plan", status, plan: { tasks } });
@@ -59,7 +60,7 @@ test("routes pass through configured corridor, return home, and consume distance
 function motion() {
   const homes = { architect: { x: 48, y: 144 }, frontend: { x: 144, y: 144 } };
   const generals = Object.keys(homes).map((id) => {
-    const general = { role: { id }, ...homes[id], state: "idle", setState(state) { this.state = state; } };
+    const general = { role: { id }, ...homes[id], state: "idle", setState(state) { this.state = state; }, pose(value) { this.workPose = value; } };
     general.position = { set(x, y) { general.x = x; general.y = y; } };
     return general;
   });
@@ -109,4 +110,31 @@ test("moving and adjacent labels stay readable and inside the scene", () => {
       }
     }
   }
+});
+
+test("work happens at the keyboard, with distinct scheduler actions and no repeated pacing", () => {
+  const { controller, generals } = motion();
+  const snapshot = plan([task("contract", "architect", "running")]);
+  controller.update(snapshot, {});
+  const taps = new Set();
+  for (let i = 0; i < 200; i++) {
+    controller.tick(.05, false);
+    assert.equal(generals[0].x, 48);
+    assert.equal(generals[0].y, 144);
+    taps.add(`${generals[0].workPose.left}:${generals[0].workPose.right}`);
+  }
+  assert.deepEqual([...taps].sort(), ["0:0", "0:2", "2:0"]);
+  for (const status of ["checking", "reviewing", "blocked", "done"]) {
+    snapshot.plan.tasks[0].status = status;
+    controller.update(snapshot, {});
+    controller.tick(.05, false);
+    assert.equal(generals[0].workPose.action, actions.workAction(status));
+    assert.equal(generals[0].workPose.left + generals[0].workPose.right, 0);
+  }
+  controller.update(null, { architect: { status: "waiting" } });
+  controller.tick(.05, false);
+  assert.equal(generals[0].workPose.action, "waiting");
+  const still = actions.workPose("typing", 1, 0, true);
+  assert.deepEqual(still, actions.workPose("typing", 200, 5, true));
+  assert.equal(still.left + still.right + still.lean + still.nod, 0);
 });

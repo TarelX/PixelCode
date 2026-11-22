@@ -5,6 +5,21 @@
   "background": "command-room.png",
   "foreground": "command-room-desks.png",
   "groundColor": "#4c8f3a",
+  "workstations": {
+    "palette": {
+      "shell": "#25353e", "screen": "#182c36", "key": "#bac7bd", "code": "#93c9ae",
+      "muted": "#556e78", "checking": "#e4bd75", "review": "#b9a1d4", "waiting": "#c5b58a", "error": "#da8c82"
+    },
+    "stations": {
+      "web-designer": { "seat": { "x": 58, "y": 60 }, "screen": { "x": 37, "y": 48 }, "keyboard": { "x": 51, "y": 58 }, "hands": "#d9d0a4" },
+      "captain": { "seat": { "x": 168, "y": 60 }, "screen": { "x": 146, "y": 48 }, "keyboard": { "x": 161, "y": 58 }, "hands": "#edcb54" },
+      "reviewer": { "seat": { "x": 280, "y": 60 }, "screen": { "x": 258, "y": 48 }, "keyboard": { "x": 273, "y": 58 }, "hands": "#d5bd6c" },
+      "architect": { "seat": { "x": 58, "y": 149 }, "screen": { "x": 37, "y": 137 }, "keyboard": { "x": 51, "y": 147 }, "hands": "#8cabc0" },
+      "frontend": { "seat": { "x": 154, "y": 149 }, "screen": { "x": 133, "y": 137 }, "keyboard": { "x": 147, "y": 147 }, "hands": "#79a7be" },
+      "backend": { "seat": { "x": 250, "y": 149 }, "screen": { "x": 229, "y": 137 }, "keyboard": { "x": 243, "y": 147 }, "hands": "#abbcb7" },
+      "debugger": { "seat": { "x": 298, "y": 149 }, "screen": { "x": 277, "y": 137 }, "keyboard": { "x": 291, "y": 147 }, "hands": "#7ebaca" }
+    }
+  },
   "navigation": {
     "corridorY": 94,
     "exits": {
