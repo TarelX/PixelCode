@@ -185,3 +185,5 @@ PixelCode is a local desktop app that turns the coding agent CLIs you already ha
 ## License
 
 MIT; all pixel art is original to this repository.
+The workspace's anchored picker placement adapts MIT-licensed MonoCode code
+(Copyright (c) 2026 Nick); see [third-party notices](THIRD_PARTY_NOTICES.md).

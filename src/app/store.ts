@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 export type Screen = "title" | "camp";
+export type WorkspaceTab = "agents" | "conversation" | "tasks" | "council";
 
 export interface Camp {
   id: string;
@@ -13,6 +14,8 @@ export interface Camp {
 interface AppState {
   screen: Screen;
   camp: Camp | null;
+  workspaceTab: WorkspaceTab;
+  setWorkspaceTab: (tab: WorkspaceTab) => void;
   openCamp: (camp: Camp) => void;
   showTitle: () => void;
 }
@@ -20,6 +23,8 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   screen: "title",
   camp: null,
+  workspaceTab: "agents",
+  setWorkspaceTab: (workspaceTab) => set({ workspaceTab }),
   openCamp: (camp) => set({ camp, screen: "camp" }),
   showTitle: () => set({ screen: "title" }),
 }));

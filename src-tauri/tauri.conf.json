@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "PixelCode",
-        "width": 1152,
-        "height": 648
+        "width": 1440,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600
       }
     ],
     "security": {
