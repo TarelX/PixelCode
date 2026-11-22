@@ -268,6 +268,14 @@ button:disabled { cursor: not-allowed; }
   .composer-input > textarea { height: 118px; }
   .activity-empty { min-height: 70px; padding: 10px; }
 }
+@media (max-height: 1100px) {
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) { padding-top: 12px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .workbench-composer { padding-top: 6px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-input > textarea { height: 80px; min-height: 80px; padding: 12px 14px; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-team,
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-caption { display: none; }
+  .workbench-center:has(.collaboration-scene:not([hidden]) .camp-map:not([hidden])) .composer-toolbar { min-height: 40px; padding-block: 4px; }
+}
 @media (max-width: 1000px) {
   .project-sidebar { width: 182px; flex-basis: 182px; }
   .workbench-grid { grid-template-columns: minmax(0, 1fr) 218px; }
