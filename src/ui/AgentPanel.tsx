@@ -51,7 +51,7 @@ export function AgentPanel({ campId, onOpen, onPlan, children }: { campId: strin
     <section className="agent-focus"><h3>{theme.studio.lead}</h3>{selected && <button onClick={() => onOpen(selected)} title={theme.studio.editAgent}>
       <RoleAvatar avatar={selected.avatar} /><span><strong>{roleName(selected, locale)}</strong><small>{roleTitle(selected, locale)}</small></span><PixelIcon name="edit" />
     </button>}<p>{selected?.loadouts[0]?.cli ?? theme.taskSelect}</p></section>
-    <section className="team-progress"><div className="panel-section-heading"><h3>{theme.studio.progress}</h3><button onClick={onPlan}><PixelIcon name="arrow" /></button></div>
+    <section className="team-progress"><div className="panel-section-heading"><h3>{theme.studio.progress}</h3><button onClick={onPlan} aria-label={theme.studio.viewPlan} title={theme.studio.viewPlan}><PixelIcon name="arrow" /></button></div>
       {plan ? <><div className="progress-track" role="progressbar" aria-label={theme.studio.progress} aria-valuemin={0} aria-valuemax={tasks.length || 1} aria-valuenow={done}><span style={{ width: `${tasks.length ? done / tasks.length * 100 : 0}%` }} /></div><p><strong>{done} / {tasks.length}</strong><span>{theme.studio.done}</span></p><button className="plan-summary" onClick={onPlan}>{plan.user_request}</button><small>{(theme.wall.planStatuses as Record<string, string>)[plan.status] ?? plan.status}</small></> : <><div className="progress-track"><span /></div><p>{theme.studio.noPlan}</p><small>{theme.studio.planHint}</small></>}
       {error && <p role="alert">{error}</p>}
     </section>

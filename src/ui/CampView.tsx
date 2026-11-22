@@ -9,6 +9,7 @@ import { useRoster, type RoleConfig } from "../camp/roster";
 import { PixelDialog } from "./PixelDialog";
 import { RoleCard } from "./RoleCard";
 import { AgentPanel } from "./AgentPanel";
+import { WorkspaceHeading } from "./WorkspaceHeading";
 import { RunFeed } from "./RunFeed";
 import { TaskPanel } from "./TaskPanel";
 import { CouncilPanel } from "./CouncilPanel";
@@ -227,6 +228,7 @@ export function CampView() {
 
   return (
     <section className="screen camp-screen">
+      <WorkspaceHeading />
       <nav className="workbench-tabs" aria-label={theme.workspace.navigation}>
         <button aria-current={tab === "conversation" ? "page" : undefined} onClick={() => setTab("conversation")}><PixelIcon name="chat" />{theme.studio.conversation}</button>
         <button aria-current={tab === "agents" ? "page" : undefined} onClick={() => setTab("agents")}><PixelIcon name="team" />{theme.studio.agents}<span className="tab-tag">{roles.length}</span></button>
@@ -242,7 +244,8 @@ export function CampView() {
             <div className="station-overlay">{roles.map((role) => {
               const anchor = anchors[role.id];
               if (!anchor) return null;
-              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ left: anchor.canvas.left + anchor.x, top: anchor.canvas.top + anchor.footY + 24 * anchor.canvas.width / loadCampLayout().width }} onClick={() => select(role.id)} title={roleName(role, locale)}>
+              const top = anchor.canvas.top + Math.min(anchor.footY + 24 * anchor.canvas.width / loadCampLayout().width, anchor.canvas.height - 20);
+              return <button key={role.id} className={`station-label ${role.id === selectedId ? "is-selected" : ""}`} style={{ left: anchor.canvas.left + anchor.x, top }} onClick={() => select(role.id)} title={roleName(role, locale)}>
                 <span>{roleName(role, locale)}</span><i className={`status-dot run-dot--${runs[role.id]?.status ?? "idle"}`} />
               </button>;
             })}</div>
