@@ -1,8 +1,0 @@
-generals:
-  - { id: captain, name: 诸葛亮, name_en: Zhuge Liang, title: 队长, title_en: The Strategist }
-  - { id: architect, name: 庞统, name_en: Pang Tong, title: 架构师, title_en: The Architect }
-  - { id: web-designer, name: 貂蝉, name_en: Diao Chan, title: 网页设计师, title_en: The Designer }
-  - { id: frontend, name: 吕布, name_en: Lü Bu, title: 前端工程师, title_en: The Frontliner }
-  - { id: backend, name: 关羽, name_en: Guan Yu, title: 后端工程师, title_en: The Gatekeeper }
-  - { id: debugger, name: 徐庶, name_en: Xu Shu, title: 调试员, title_en: The Tracker }
-  - { id: reviewer, name: 张昭, name_en: Zhang Zhao, title: 审查员, title_en: The Examiner }

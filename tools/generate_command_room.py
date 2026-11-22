@@ -2,7 +2,7 @@
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-OUT = Path(__file__).resolve().parents[1] / "themes/three-kingdoms/tiles"
+OUT = Path(__file__).resolve().parents[1] / "themes/pokemon/tiles"
 image = Image.new("RGBA", (320, 180), "#1b2029")
 d = ImageDraw.Draw(image)
 

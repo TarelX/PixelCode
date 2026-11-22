@@ -71,7 +71,7 @@ impl GitService {
     pub fn worktree(&self, allowed: &Path, camp: &str, task: &str) -> Result<Worktree, String> {
         for id in [camp, task] {
             if id.is_empty() || id.contains(['/', '\\', ':']) || id.contains("..") || id == "." {
-                return Err("worktree 所属大营或任务 ID 无效".into());
+                return Err("worktree 所属基地或任务 ID 无效".into());
             }
         }
         fs::create_dir_all(allowed).map_err(|e| e.to_string())?;

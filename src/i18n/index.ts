@@ -2,9 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { parse } from "yaml";
 import { create } from "zustand";
 import type { RoleConfig } from "../camp/roster";
-import zh from "../../themes/three-kingdoms/ui.json";
-import en from "../../themes/three-kingdoms/ui.en.json";
-import names from "../../themes/three-kingdoms/names.yaml?raw";
+import zh from "../../themes/pokemon/ui.json";
+import en from "../../themes/pokemon/ui.en.json";
+import names from "../../themes/pokemon/names.yaml?raw";
 
 export type Locale = "zh-CN" | "en";
 export type ThemeCopy = typeof zh;
