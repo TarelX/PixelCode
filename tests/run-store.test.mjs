@@ -85,6 +85,15 @@ test("failed and stopped states, bounded text, and command errors", async () => 
   assert.equal(run.state().error, "Cannot stop CLI");
 });
 
+test("blocked state carries the reason and stays visible", async () => {
+  const run = await store();
+  run.event("started");
+  run.event("text", { text: "分析完成。\nBLOCKED: 需要 git push 权限" });
+  run.event("blocked", { message: "需要 git push 权限" });
+  assert.equal(run.state().runs.role.status, "blocked");
+  assert.equal(run.state().runs.role.error, "需要 git push 权限");
+});
+
 test("completion retains task and artifact metadata without leaking it into a new run", async () => {
   const run = await store();
   const artifact = { id: "artifact-1", file_path: "camp/task/output.md", absolute_path: "local-output.md" };

@@ -8,7 +8,7 @@ export interface RoleRun {
   run_id: number;
   task_id: string;
   artifact?: Artifact;
-  status: "running" | "waiting" | "completed" | "failed" | "stopped";
+  status: "running" | "waiting" | "completed" | "failed" | "blocked" | "stopped";
   text: string;
   tool: string;
   error: string;
@@ -19,7 +19,7 @@ interface RunEvent {
   artifact?: Artifact;
   camp_id: string;
   role_id: string;
-  type: "started" | "text" | "tool" | "waiting" | "completed" | "failed" | "stopped";
+  type: "started" | "text" | "tool" | "waiting" | "completed" | "failed" | "blocked" | "stopped";
   text?: string;
   name?: string;
   message?: string;
@@ -48,7 +48,7 @@ export const useRuns = create<{
       : { ...previous };
     if (event.type === "text") run.text = (run.text + (event.text ?? "")).slice(-32000);
     if (event.type === "tool") run.tool = event.name ?? "";
-    if (event.type === "completed" || event.type === "failed" || event.type === "stopped" || event.type === "waiting") {
+    if (event.type === "completed" || event.type === "failed" || event.type === "blocked" || event.type === "stopped" || event.type === "waiting") {
       run.status = event.type;
       run.error = event.message ?? "";
       run.artifact = event.artifact;

@@ -49,6 +49,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .run-bubble > p { max-height: 54px; overflow: auto; }
 .run-bubble--failed { border-color: var(--ui-error); }
 .run-bubble--failed strong { color: var(--ui-error); }
+.run-bubble--blocked { border-color: var(--ui-warning); }
+.run-bubble--blocked strong { color: var(--ui-warning); }
 .task-panel { flex-shrink: 0; margin-top: 12px; padding: 12px 16px; background: var(--ui-sidebar); border: 1px solid var(--ui-border); }
 .task-panel h2 { margin: 0 0 8px; font-size: 13px; }
 .task-panel label { display: block; color: var(--ui-muted); font-size: 11px; }

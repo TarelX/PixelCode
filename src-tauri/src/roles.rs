@@ -93,6 +93,18 @@ fn read_only_tool(rule: &str) -> bool {
     READ_ONLY_TOOLS.contains(&rule.split_once('(').map_or(rule, |(tool, _)| tool))
 }
 
+const WORKER_RULES: &str = "固定规则（执行角色共用）：\n- 只在任务声明的 files 范围内写文件，不要改动范围外的文件。\n- 不执行 git commit/push，不切换分支，不安装依赖，不做全仓格式化。\n- 需要超出权限或范围的操作时，以 `BLOCKED: <原因>` 结束并停止，不要失败硬闯。";
+const CAPTAIN_RULES: &str = "固定规则（队长）：\n- 只读规划：不实现任务、不修改文件、不运行检查。\n- 需要超出权限或范围的操作时，以 `BLOCKED: <原因>` 结束并停止，不要失败硬闯。";
+const REVIEWER_RULES: &str = "固定规则（审查员）：\n- 只读审查：不修改文件。\n- 需要超出权限或范围的操作时，以 `BLOCKED: <原因>` 结束并停止，不要失败硬闯。";
+
+fn rules_envelope(role_type: &str) -> &'static str {
+    match role_type {
+        "captain" => CAPTAIN_RULES,
+        "reviewer" => REVIEWER_RULES,
+        _ => WORKER_RULES,
+    }
+}
+
 pub(crate) struct RunConfig {
     pub cli: String,
     pub model: String,
@@ -385,6 +397,8 @@ pub(crate) fn run_config(
         system_prompt.push_str("\n\n");
         system_prompt.push_str(text);
     }
+    system_prompt.push_str("\n\n");
+    system_prompt.push_str(rules_envelope(&role.role_type));
     Ok(RunConfig {
         cli: loadout.cli.clone(),
         model: loadout.model.clone(),
@@ -392,6 +406,16 @@ pub(crate) fn run_config(
         permissions: role.permissions,
         artifact_name,
         is_captain: role.role_type == "captain",
+    })
+}
+
+pub(crate) fn blocked_reason(output: &str) -> Option<String> {
+    let last = output.lines().rev().find(|line| !line.trim().is_empty())?;
+    let reason = last.trim().strip_prefix("BLOCKED:")?.trim();
+    Some(if reason.is_empty() {
+        "未说明原因".into()
+    } else {
+        reason.into()
     })
 }
 
@@ -539,7 +563,7 @@ pub(crate) mod tests {
         assert_eq!(
             config.system_prompt,
             format!(
-                "Camp persona\n\n{}",
+                "Camp persona\n\n{}\n\n{WORKER_RULES}",
                 include_str!("../../skills/test-writing/SKILL.md")
             )
         );
@@ -595,6 +619,52 @@ pub(crate) mod tests {
         assert_eq!(config.artifact_name, "review.md");
         for tool in READ_ONLY_DENY {
             assert!(config.permissions.deny.iter().any(|rule| rule == tool));
+        }
+    }
+
+    #[test]
+    fn run_config_appends_the_rules_envelope_for_every_role_type() {
+        let connection = connection();
+        for (role_type, envelope) in [
+            ("captain", CAPTAIN_RULES),
+            ("reviewer", REVIEWER_RULES),
+            ("architect", WORKER_RULES),
+            ("designer", WORKER_RULES),
+            ("frontend", WORKER_RULES),
+            ("backend", WORKER_RULES),
+            ("debugger", WORKER_RULES),
+        ] {
+            let id = presets()
+                .unwrap()
+                .into_iter()
+                .find(|role| role.role_type == role_type)
+                .unwrap()
+                .id;
+            let config = run_config(&connection, "camp", &id, 0).unwrap();
+            assert!(
+                config.system_prompt.ends_with(envelope),
+                "{role_type} should carry its rules envelope"
+            );
+            assert!(envelope.contains("BLOCKED:"));
+        }
+    }
+
+    #[test]
+    fn blocked_reason_reads_only_a_trailing_blocked_line() {
+        assert_eq!(
+            blocked_reason("已完成分析。\nBLOCKED: 需要安装依赖权限\n").as_deref(),
+            Some("需要安装依赖权限")
+        );
+        assert_eq!(blocked_reason("BLOCKED: 需要 git push 权限").as_deref(), Some("需要 git push 权限"));
+        assert_eq!(blocked_reason("说明\n\nBLOCKED:").as_deref(), Some("未说明原因"));
+        for text in [
+            "",
+            "普通输出",
+            "BLOCKED: 只在开头\n后续仍在输出",
+            "提到 BLOCKED: 协议但不在末行",
+            "{\"verdict\":\"approve\",\"reason\":\"通过\"}",
+        ] {
+            assert_eq!(blocked_reason(text), None, "{text}");
         }
     }
 

@@ -420,6 +420,11 @@ impl<R: Runner> Execution<'_, R> {
                         .unwrap_or("output.md"),
                     &output,
                 )?;
+                if let Some(reason) = roles::blocked_reason(&output) {
+                    halt.store(true, Ordering::SeqCst);
+                    self.status(&mut event, "blocked", Some(reason))?;
+                    return Ok(false);
+                }
                 let _integration = INTEGRATION.lock().map_err(|_| "无法访问改动集成锁")?;
                 if let Some(git) = git
                     && let Err(error) = git.apply(&patch, false)
@@ -476,6 +481,9 @@ impl<R: Runner> Execution<'_, R> {
                             return Ok(Attempt::Stopped);
                         }
                         self.artifact(&event, "review", "review.md", &text)?;
+                        if let Some(reason) = roles::blocked_reason(&text) {
+                            return Ok(Attempt::Blocked(reason));
+                        }
                         if let Some(reason) = review_rejection(&text) {
                             event.review_rounds += 1;
                             let feedback = format!("审查打回，请返工：{reason}");
@@ -673,6 +681,8 @@ mod tests {
         invalid_review: bool,
         stop_on_done: bool,
         empty: u32,
+        blocked: bool,
+        blocked_review: bool,
     }
     impl Runner for Fake {
         fn run(&self, role: &str, prompt: &str, _: &Path) -> Result<String, String> {
@@ -682,6 +692,9 @@ mod tests {
             }
             if role == "reviewer" {
                 assert!(prompt.contains(REVIEW_VERDICT));
+                if self.blocked_review {
+                    return Ok("审查受阻。\nBLOCKED: 无法访问任务声明的 files 范围".into());
+                }
                 if self.invalid_review {
                     return Ok("not JSON".into());
                 }
@@ -704,6 +717,9 @@ mod tests {
             }
             if role == "backend" {
                 assert!(prompt.contains("输入产物 repro.md：\n角色输出"));
+            }
+            if self.blocked {
+                return Ok("分析完成。\nBLOCKED: 需要 git push 权限".into());
             }
             Ok("角色输出".into())
         }
@@ -964,6 +980,41 @@ mod tests {
                 assert_eq!(state(&conn, "fix").0, "pending");
             }
         }
+    }
+
+    #[test]
+    fn worker_blocked_report_blocks_the_task() {
+        let mut fake = Fake {
+            blocked: true,
+            ..Fake::default()
+        };
+        let conn = run(&mut fake);
+        assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 0, 0));
+        assert_eq!(state(&conn, "fix").0, "pending");
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "aborted"
+        );
+        let events = fake.events.lock().unwrap();
+        let blocked = events.iter().find(|event| event.status == "blocked").unwrap();
+        assert_eq!(blocked.message.as_deref(), Some("需要 git push 权限"));
+    }
+
+    #[test]
+    fn reviewer_blocked_report_blocks_the_task() {
+        let mut fake = Fake {
+            blocked_review: true,
+            ..Fake::default()
+        };
+        let conn = run(&mut fake);
+        assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 0, 0));
+        assert_eq!(state(&conn, "fix").0, "pending");
+        let events = fake.events.lock().unwrap();
+        let blocked = events.iter().find(|event| event.status == "blocked").unwrap();
+        assert_eq!(
+            blocked.message.as_deref(),
+            Some("无法访问任务声明的 files 范围")
+        );
     }
 
     #[test]
