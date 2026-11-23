@@ -141,6 +141,8 @@ pub(crate) struct Task {
     pub(crate) output_artifacts: Vec<String>,
     pub(crate) acceptance_criteria: String,
     pub(crate) check_command: Option<CheckCommand>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) files: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -184,11 +186,12 @@ Otherwise use this draft shape (check_command can be null if there is no applica
 {"scenario":"bug-fix","recruited_roles":["debugger"],"tasks":[
   {"id":"reproduce","title":"…","description":"…","role_id":"debugger","depends_on":[],
    "input_artifacts":[],"output_artifacts":["repro.md"],"acceptance_criteria":"…",
-   "check_command":{"program":"npm","args":["test"]}}
+   "check_command":{"program":"npm","args":["test"]},"files":["src/auth.ts"]}
 ]}
 Use short ASCII task IDs and relative artifact names. Dependencies are task IDs in this plan.
 Each input artifact must be the first output artifact of a task it depends on.
 Recruit every assigned role. Use single-executable check suggestions with argument arrays, never shell scripts.
+Name the project-relative paths each task expects to write in "files"; use [] or omit it for read-only work. Paths must be relative and cannot contain absolute paths, "..", backslashes, colons, or empty segments.
 "#;
 
 const FLOWS: &[&str] = &[
@@ -336,6 +339,19 @@ impl Plan {
                     || path.chars().any(char::is_control)
                 {
                     return Err(format!("计划卡 {} 的产物名称不是安全的相对路径", task.id));
+                }
+            }
+            for path in &task.files {
+                if path.trim().is_empty()
+                    || path.starts_with('/')
+                    || path.split('/').any(|part| {
+                        let part = part.trim();
+                        part.is_empty() || matches!(part, "." | "..")
+                    })
+                    || path.contains([':', '\\'])
+                    || path.chars().any(char::is_control)
+                {
+                    return Err(format!("计划卡 {} 的写入范围不是安全的相对路径", task.id));
                 }
             }
             if let Some(command) = &task.check_command
@@ -523,6 +539,39 @@ mod tests {
                 "{pointer}"
             );
         }
+    }
+
+    #[test]
+    fn file_scopes_must_be_safe_relative_paths() {
+        let roster = roster();
+        let fixture = include_str!("../../tests/scheduler/captain-plan.json");
+        let original: Value = serde_json::from_str(fixture).unwrap();
+        for path in [
+            "/src/app.ts",
+            "C:/src/app.ts",
+            "../src/app.ts",
+            "src/../app.ts",
+            "src\\app.ts",
+            "src:app.ts",
+            "",
+            "src//app.ts",
+            "./src/app.ts",
+        ] {
+            let mut draft = original.clone();
+            draft["tasks"][0]["files"] = json!([path]);
+            let result = parse(&draft.to_string(), &roster, None);
+            assert!(
+                matches!(result, Err(reason) if reason.contains("写入范围")),
+                "{path}"
+            );
+        }
+        let mut draft = original;
+        draft["tasks"][0]["files"] = json!(["src/app.ts", "tests/app.test.ts"]);
+        draft["tasks"][1]["files"] = json!(["docs"]);
+        assert!(matches!(
+            parse(&draft.to_string(), &roster, None).unwrap(),
+            Reply::Draft(_)
+        ));
     }
 
     #[test]

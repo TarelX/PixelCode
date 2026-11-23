@@ -8,6 +8,7 @@ export interface PlanTask {
   output_artifacts: string[];
   acceptance_criteria: string;
   check_command: { program: string; args: string[] } | null;
+  files?: string[];
   status?: string;
 }
 

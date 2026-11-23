@@ -14,6 +14,7 @@ export function TaskDetail({ task, role, tasks, assignment, resultId }: {
     [theme.wall.dependencies, task.depends_on.map((id) => tasks.find((item) => item.id === id)?.title ?? id).join(" · ")],
     [theme.wall.inputs, task.input_artifacts.join("\n")],
     [theme.wall.outputs, task.output_artifacts.join("\n")],
+    [theme.wall.files, (task.files ?? []).join("\n")],
     [theme.wall.acceptance, task.acceptance_criteria],
   ];
   return <div className="task-detail">
