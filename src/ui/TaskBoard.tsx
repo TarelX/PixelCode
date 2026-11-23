@@ -20,6 +20,7 @@ export function TaskBoard({ campId }: { campId: string }) {
   const [edits, setEdits] = useState<{ planId: string; assignments: Record<string, string> } | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [cleanup, setCleanup] = useState<string[]>([]);
   const request = useRef(0);
   const roles = useRoster((s) => s.roles);
   const revision = useRuns((s) => Object.values(s.runs).filter((run) => run.status === "completed" && run.artifact?.type === "plan").map((run) => run.artifact!.id).join(","));
@@ -27,7 +28,8 @@ export function TaskBoard({ campId }: { campId: string }) {
     const id = ++request.current;
     try {
       const value = await invoke<StoredPlan | null>("latest_plan", { campId });
-      if (id === request.current) { setPlan(value); setError(""); }
+      const diagnostics = await invoke<string[]>("list_worktree_diagnostics", { campId }).catch(() => [] as string[]);
+      if (id === request.current) { setPlan(value); setCleanup(diagnostics); setError(""); }
     } catch (reason) {
       if (id === request.current) setError(String(reason));
     } finally {
@@ -53,7 +55,6 @@ export function TaskBoard({ campId }: { campId: string }) {
     };
   }, [campId, refresh]);
   useEffect(() => { void refresh(); }, [refresh, revision]);
-
   const nameForRole = (id: string) => {
     const role = roles.find((item) => item.id === id);
     return role ? roleName(role, locale) : id;
@@ -69,6 +70,7 @@ export function TaskBoard({ campId }: { campId: string }) {
   }));
   const detail = selected?.planId === plan.id ? tasks.find((task) => task.id === selected.taskId) : undefined;
   const checkedTasks = tasks.filter((task) => task.check_command);
+  const resume = plan.status === "aborted" && tasks.some((task) => task.status === "interrupted");
   async function decide(command: string, args: Record<string, unknown> = {}) {
     setBusy(true);
     setActionError("");
@@ -89,7 +91,7 @@ export function TaskBoard({ campId }: { campId: string }) {
       <span className="section-label">{scenarios[plan.scenario] ?? plan.scenario}</span><strong>{planStatuses[plan.status] ?? plan.status}</strong><p>{plan.user_request}</p>
       <div className="wall-recruits"><span>{theme.wall.recruited}</span>{plan.plan.recruited_roles.map((id) => <span key={id}>{nameForRole(id)}</span>)}</div>
     </header>
-    {(actionError || plan.execution_message) && <p role="alert">{actionError || plan.execution_message}</p>}
+    {(cleanup.length > 0 || actionError || plan.execution_message) && <p role="alert">{cleanup.length > 0 ? `${theme.wall.cleanup}${cleanup.join("、")}` : ""}{actionError || plan.execution_message}</p>}
     <div className="wall-scroll"><div className="wall-graph" style={{ width, height }}>
       <svg width={width} height={height} shapeRendering="crispEdges" aria-hidden="true">
         {nodes.flatMap((node) => node.task.depends_on.map((id) => {
@@ -103,19 +105,21 @@ export function TaskBoard({ campId }: { campId: string }) {
         <small className={`task-status task-status--${Object.prototype.hasOwnProperty.call(statuses, task.status ?? "pending") ? task.status ?? "pending" : "pending"}`}>{statuses[task.status ?? "pending"] ?? task.status}</small>
       </button>)}
     </div></div>
-    {(draft || delivery) && <section className="wall-gate">
-      <h3>{draft ? gate.approvalTitle : gate.deliveryTitle}</h3>
-      <p>{draft ? gate.approvalHint : gate.deliveryHint}</p>
+    {(draft || delivery || resume) && <section className="wall-gate">
+      <h3>{draft ? gate.approvalTitle : delivery ? gate.deliveryTitle : gate.resumeTitle}</h3>
+      <p>{draft ? gate.approvalHint : delivery ? gate.deliveryHint : gate.resumeHint}</p>
       {draft && checkedTasks.length > 0 && <ul>{checkedTasks.map(({ id, title, check_command: check }) =>
         <li key={id}>{title}: <code>{JSON.stringify([check!.program, ...check!.args])}</code></li>
       )}</ul>}
       <div className="wall-gate__actions">
-        <PixelButton variant="primary" disabled={busy} onClick={() => void (draft
-          ? decide("approve_plan_execution", { assignments })
-          : decide("decide_delivery", { accepted: true }))}>{draft ? gate.approve : gate.deliver}</PixelButton>
-        <PixelButton disabled={busy} onClick={() => void (draft
-          ? decide("reject_plan")
-          : decide("decide_delivery", { accepted: false }))}>{draft ? gate.rejectDraft : gate.rejectDelivery}</PixelButton>
+        {resume ? <PixelButton variant="primary" disabled={busy} onClick={() => void decide("continue_plan_execution")}>{gate.resume}</PixelButton> : <>
+          <PixelButton variant="primary" disabled={busy} onClick={() => void (draft
+            ? decide("approve_plan_execution", { assignments })
+            : decide("decide_delivery", { accepted: true }))}>{draft ? gate.approve : gate.deliver}</PixelButton>
+          <PixelButton disabled={busy} onClick={() => void (draft
+            ? decide("reject_plan")
+            : decide("decide_delivery", { accepted: false }))}>{draft ? gate.rejectDraft : gate.rejectDelivery}</PixelButton>
+        </>}
       </div>
     </section>}
     <PixelDialog open={Boolean(detail)} title={detail?.title ?? theme.wall.title} closeLabel={gate.backToWall} onClose={() => setSelected(null)}>

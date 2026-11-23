@@ -161,6 +161,133 @@ fn finish(conn: &Connection, id: &str, succeeded: bool) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn recover_interrupted(conn: &mut Connection) -> Result<usize, String> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(db_error)?;
+    let plan_ids = {
+        let mut statement = tx
+            .prepare("SELECT id FROM plans WHERE status='executing'")
+            .map_err(db_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(db_error)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?
+    };
+    let mut recovered = 0;
+    for id in plan_ids {
+        let active = {
+            let mut statement = tx
+                .prepare("SELECT id FROM tasks WHERE plan_id=?1 AND status IN ('running','checking','reviewing')")
+                .map_err(db_error)?;
+            let rows = statement
+                .query_map(params![id], |row| row.get::<_, String>(0))
+                .map_err(db_error)?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(db_error)?
+        };
+        for task_id in &active {
+            tx.execute(
+                "UPDATE tasks SET status='interrupted',updated_at=unixepoch() WHERE id=?1",
+                [task_id],
+            )
+            .map_err(db_error)?;
+        }
+        let json: String = tx
+            .query_row("SELECT plan_json FROM plans WHERE id=?1", [id.as_str()], |row| {
+                row.get(0)
+            })
+            .map_err(db_error)?;
+        let mut plan: Plan = serde_json::from_str(&json)
+            .map_err(|error| format!("无法读取计划卡计划：{error}"))?;
+        for task in &mut plan.tasks {
+            let status: Option<String> = tx
+                .query_row(
+                    "SELECT status FROM tasks WHERE id=?1",
+                    [format!("{id}-{}", task.id)],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(db_error)?;
+            if let Some(status) = status {
+                task.status = Some(status);
+            }
+        }
+        let json = serde_json::to_string(&plan)
+            .map_err(|error| format!("无法编码计划卡计划：{error}"))?;
+        tx.execute(
+            "UPDATE plans SET status='aborted',plan_json=?2 WHERE id=?1",
+            params![id.as_str(), json],
+        )
+        .map_err(db_error)?;
+        let task_id: Option<String> = tx
+            .query_row(
+                "SELECT id FROM tasks WHERE plan_id=?1 ORDER BY rowid LIMIT 1",
+                [id.as_str()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        if let Some(task_id) = task_id {
+            tx.execute(
+                "INSERT INTO messages (id,task_id,role,type,content,created_at) VALUES (?1,?2,'system','scheduler',?3,unixepoch())",
+                params![
+                    format!("{id}-startup-recovery"),
+                    task_id,
+                    "上次运行被中断，可在计划卡墙继续"
+                ],
+            )
+            .map_err(db_error)?;
+        }
+        recovered += 1;
+    }
+    tx.commit().map_err(db_error)?;
+    Ok(recovered)
+}
+
+fn resume(conn: &mut Connection, camp: &str, id: &str) -> Result<Plan, String> {
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(db_error)?;
+    let mut plan = plans::latest(&tx, camp)?
+        .filter(|stored| stored.id == id && stored.status == "aborted")
+        .ok_or("只有已中止的计划卡可以继续")?
+        .plan;
+    let interrupted: i64 = tx
+        .query_row(
+            "SELECT count(*) FROM tasks WHERE plan_id=?1 AND status='interrupted'",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(db_error)?;
+    if interrupted == 0 {
+        return Err("计划卡中没有被中断的任务，无法继续".into());
+    }
+    for task in &mut plan.tasks {
+        let status: Option<String> = tx
+            .query_row(
+                "SELECT status FROM tasks WHERE id=?1",
+                [format!("{id}-{}", task.id)],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        if let Some(status) = status {
+            task.status = Some(status);
+        }
+    }
+    let json = serde_json::to_string(&plan)
+        .map_err(|error| format!("无法编码计划卡计划：{error}"))?;
+    tx.execute(
+        "UPDATE plans SET status='executing',plan_json=?2 WHERE id=?1",
+        params![id, json],
+    )
+    .map_err(db_error)?;
+    tx.commit().map_err(db_error)?;
+    Ok(plan)
+}
+
 fn order(plan: &Plan) -> Result<Vec<usize>, String> {
     let mut incoming: Vec<_> = plan
         .tasks
@@ -340,8 +467,20 @@ impl<R: Runner> Execution<'_, R> {
         let halt = AtomicBool::new(false);
         std::thread::scope(|scope| {
             let (send, receive) = std::sync::mpsc::channel();
-            let mut started = HashSet::new();
-            let mut completed = HashSet::new();
+            let mut started: HashSet<usize> = HashSet::new();
+            let mut completed: HashSet<String> = HashSet::new();
+            for (index, task) in self.plan.tasks.iter().enumerate() {
+                match task.status.as_deref() {
+                    Some("done") => {
+                        completed.insert(task.id.clone());
+                        started.insert(index);
+                    }
+                    Some("blocked") | Some("failed") => {
+                        started.insert(index);
+                    }
+                    _ => (),
+                }
+            }
             let mut active = 0;
             let mut active_tasks: HashSet<usize> = HashSet::new();
             let mut first_error = None;
@@ -442,6 +581,22 @@ impl<R: Runner> Execution<'_, R> {
     ) -> Result<bool, String> {
         let task = &self.plan.tasks[index];
         let mut event = self.event(&task.id);
+        let resumed = task.status.as_deref() == Some("interrupted");
+        {
+            let conn = database(self.conn)?;
+            let stored = conn
+                .query_row(
+                    "SELECT attempts,review_rounds FROM tasks WHERE id=?1",
+                    [event.task_id.as_str()],
+                    |row| Ok((row.get::<_, u32>(0)?, row.get::<_, u32>(1)?)),
+                )
+                .optional()
+                .map_err(db_error)?;
+            if let Some((attempts, review_rounds)) = stored {
+                event.attempts = attempts;
+                event.review_rounds = review_rounds;
+            }
+        }
         let result = (|| {
             let roster = roles::planning_roster(&*database(self.conn)?, self.camp)?;
             let is_reviewer = roster
@@ -480,15 +635,43 @@ impl<R: Runner> Execution<'_, R> {
             if is_reviewer {
                 prompt.push_str(&format!("\n{REVIEW_VERDICT}"));
             }
-            let worktree = if let Some(git) = git {
+            let mut worktree = if let Some(git) = git {
                 let _lock = INTEGRATION.lock().map_err(|_| "无法访问改动集成锁")?;
                 Some(git.worktree(self.worktrees, self.camp, &event.task_id)?)
             } else {
                 None
             };
+            let mut rollback_error = None;
+            if resumed
+                && let (Some(git), Some(tree)) = (git, worktree.as_ref())
+            {
+                let claimed = tree.claimed();
+                if let Some(patch) =
+                    latest_patch(&*database(self.conn)?, self.root, self.camp, &event.task_id)?
+                    && git.is_applied(patch.as_bytes())?
+                    && let Err(error) = git.apply(patch.as_bytes(), true)
+                {
+                    rollback_error = Some(error);
+                }
+                if rollback_error.is_none() && claimed {
+                    tree.reset()?;
+                }
+            }
+            if let Some(error) = rollback_error {
+                halt.store(true, Ordering::SeqCst);
+                self.status(
+                    &mut event,
+                    "blocked",
+                    Some(format!("无法撤回基地中已集成的改动：{error}")),
+                )?;
+                if let Some(tree) = worktree.take() {
+                    tree.preserve();
+                }
+                return Ok(false);
+            }
             let cwd = worktree
                 .as_ref()
-                .map_or(self.cwd, |tree| tree.path.as_path());
+                .map_or_else(|| self.cwd.to_path_buf(), |tree| tree.path.clone());
             let mut feedback = String::new();
             let mut session = stored_session(&*database(self.conn)?, &event.task_id)?;
             loop {
@@ -499,7 +682,7 @@ impl<R: Runner> Execution<'_, R> {
                 let output = self.runner.run(
                     &task.role_id,
                     &format!("{prompt}\n{feedback}"),
-                    cwd,
+                    &cwd,
                     session.as_ref(),
                 );
                 let patch = worktree
@@ -536,6 +719,21 @@ impl<R: Runner> Execution<'_, R> {
                     return Ok(false);
                 }
                 let _integration = INTEGRATION.lock().map_err(|_| "无法访问改动集成锁")?;
+                if let Some(tree) = worktree.as_ref() {
+                    let changed = tree.external_changes(&task.files)?;
+                    if !changed.is_empty() {
+                        halt.store(true, Ordering::SeqCst);
+                        self.status(
+                            &mut event,
+                            "blocked",
+                            Some(format!("基地目录在集成前被外部修改：{}", changed.join("、"))),
+                        )?;
+                        if let Some(tree) = worktree.take() {
+                            tree.preserve();
+                        }
+                        return Ok(false);
+                    }
+                }
                 if let Some(git) = git
                     && let Err(error) = git.apply(&patch, false)
                 {
@@ -593,7 +791,7 @@ impl<R: Runner> Execution<'_, R> {
                         let review = self.runner.run(
                             &reviewer.id,
                             &format!("审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"),
-                            cwd,
+                            &cwd,
                             None,
                         )?;
                         let text = review.text;
@@ -646,7 +844,7 @@ impl<R: Runner> Execution<'_, R> {
             }
         })();
         if self.runner.stopped() && !matches!(result, Ok(true)) {
-            self.status(&mut event, "pending", Some("用户已停止执行".into()))?;
+            self.status(&mut event, "interrupted", Some("用户已停止执行".into()))?;
             return Ok(false);
         }
         if let Err(error) = &result {
@@ -655,6 +853,24 @@ impl<R: Runner> Execution<'_, R> {
         }
         result
     }
+}
+
+fn latest_patch(
+    conn: &Connection,
+    root: &Path,
+    camp: &str,
+    task_id: &str,
+) -> Result<Option<String>, String> {
+    let id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM artifacts WHERE task_id=?1 AND file_path=?2 ORDER BY created_at DESC,rowid DESC LIMIT 1",
+            params![task_id, format!("{camp}/{task_id}/changes.diff")],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| format!("无法查询改动补丁：{error}"))?;
+    id.map(|id| artifacts::read(conn, root, &id).map(|artifact| artifact.content))
+        .transpose()
 }
 
 fn check(command: &CheckCommand, cwd: &Path, slot: &RunSlot) -> Result<(bool, String), String> {
@@ -755,6 +971,44 @@ impl Runner for LiveRunner<'_> {
     }
 }
 
+fn run_plan(
+    conn: Connection,
+    window: &WebviewWindow,
+    data_dir: &Path,
+    root: &Path,
+    camp_id: &str,
+    plan_id: &str,
+    plan: &Plan,
+) -> Result<(), String> {
+    let cwd = camps::run_root(&conn, camp_id)?;
+    let conn = Mutex::new(conn);
+    let slot = window.state::<RunSlot>();
+    let runner = LiveRunner {
+        conn: &conn,
+        camp: camp_id,
+        slot: &slot,
+        window,
+    };
+    let result = Execution {
+        conn: &conn,
+        root,
+        cwd: &cwd,
+        worktrees: &data_dir.join("worktrees"),
+        camp: camp_id,
+        id: plan_id,
+        plan,
+        runner: &runner,
+    }
+    .execute();
+    let final_status = finish(
+        &*database(&conn)?,
+        plan_id,
+        result.is_ok() && !slot.is_stopped(),
+    );
+    final_status?;
+    result
+}
+
 #[tauri::command]
 pub async fn approve_plan_execution(
     window: WebviewWindow,
@@ -773,39 +1027,86 @@ pub async fn approve_plan_execution(
             crate::db::open(&data_dir).map_err(|e| format!("无法访问基地数据库：{e}"))?;
         conn.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(db_error)?;
-        let cwd = camps::run_root(&conn, &camp_id)?;
         let root = window.state::<artifacts::ArtifactRoot>();
         let plan = approve(&mut conn, &camp_id, &plan_id, &assignments)?;
-        let conn = Mutex::new(conn);
-        let runner = LiveRunner {
-            conn: &conn,
-            camp: &camp_id,
-            slot: &slot,
-            window: &window,
-        };
-        let result = Execution {
-            conn: &conn,
-            root: &root.0,
-            cwd: &cwd,
-            worktrees: &data_dir.join("worktrees"),
-            camp: &camp_id,
-            id: &plan_id,
-            plan: &plan,
-            runner: &runner,
-        }
-        .execute();
-        let final_status = finish(
-            &*database(&conn)?,
-            &plan_id,
-            result.is_ok() && !slot.is_stopped(),
-        );
+        let outcome = run_plan(conn, &window, &data_dir, &root.0, &camp_id, &plan_id, &plan);
         drop(active);
         let _ = window.emit_to(window.label(), "plan-state", &camp_id);
-        final_status?;
-        result
+        outcome
     })
     .await
     .map_err(|e| format!("计划卡执行失败：{e}"))?
+}
+
+#[tauri::command]
+pub async fn continue_plan_execution(
+    window: WebviewWindow,
+    camp_id: String,
+    plan_id: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let slot = window.state::<RunSlot>();
+        let active = slot.acquire()?;
+        let data_dir = window
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("无法访问应用数据目录：{e}"))?;
+        let mut conn =
+            crate::db::open(&data_dir).map_err(|e| format!("无法访问基地数据库：{e}"))?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(db_error)?;
+        let root = window.state::<artifacts::ArtifactRoot>();
+        let plan = resume(&mut conn, &camp_id, &plan_id)?;
+        let outcome = run_plan(conn, &window, &data_dir, &root.0, &camp_id, &plan_id, &plan);
+        drop(active);
+        let _ = window.emit_to(window.label(), "plan-state", &camp_id);
+        outcome
+    })
+    .await
+    .map_err(|e| format!("计划卡继续失败：{e}"))?
+}
+
+#[tauri::command]
+pub fn list_worktree_diagnostics(
+    window: WebviewWindow,
+    camp_id: String,
+) -> Result<Vec<String>, String> {
+    let data_dir = window
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法访问应用数据目录：{e}"))?;
+    let camp_dir = artifacts::resolve(&data_dir.join("worktrees"), Path::new(&camp_id))?;
+    let conn = window.state::<Mutex<Connection>>();
+    let conn = conn.lock().map_err(|_| "无法访问基地数据库")?;
+    let mut known = HashSet::new();
+    {
+        let mut statement = conn
+            .prepare("SELECT id FROM tasks WHERE camp_id=?1")
+            .map_err(|e| format!("无法查询任务：{e}"))?;
+        let rows = statement
+            .query_map([camp_id.as_str()], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("无法查询任务：{e}"))?;
+        for row in rows {
+            known.insert(row.map_err(|e| format!("无法读取任务：{e}"))?);
+        }
+    }
+    let mut diagnostics = Vec::new();
+    if camp_dir.is_dir() {
+        for entry in std::fs::read_dir(&camp_dir)
+            .map_err(|e| format!("无法读取 worktree 目录：{e}"))?
+        {
+            let entry = entry.map_err(|e| format!("无法读取 worktree 目录：{e}"))?;
+            let path = entry.path();
+            if path.is_dir() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if !known.contains(&name) {
+                    diagnostics.push(path.display().to_string());
+                }
+            }
+        }
+    }
+    diagnostics.sort();
+    Ok(diagnostics)
 }
 
 #[cfg(test)]
@@ -1460,7 +1761,7 @@ mod tests {
             let conn = run(&mut fake);
             assert_eq!(
                 state(&conn, "reproduce").0,
-                if stop { "pending" } else { "failed" }
+                if stop { "interrupted" } else { "failed" }
             );
             assert_eq!(state(&conn, "fix").0, "pending");
             assert_eq!(
@@ -1476,6 +1777,63 @@ mod tests {
                 "无法启动"
             }));
         }
+    }
+
+    #[test]
+    fn startup_recovery_interrupts_active_tasks_and_continue_resumes_remaining_dag() {
+        let mut conn = connection("draft");
+        prepare(&mut conn, "camp", "plan").unwrap();
+        conn.execute(
+            "UPDATE tasks SET status='done',updated_at=unixepoch() WHERE id='plan-reproduce'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE tasks SET status='running',updated_at=unixepoch() WHERE id='plan-fix'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(recover_interrupted(&mut conn).unwrap(), 1);
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "aborted"
+        );
+        assert_eq!(state(&conn, "reproduce").0, "done");
+        assert_eq!(state(&conn, "fix").0, "interrupted");
+        let plan = resume(&mut conn, "camp", "plan").unwrap();
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "executing"
+        );
+        let root = std::env::temp_dir().join(format!(
+            "pixelcode-resume-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        artifacts::write_artifact(
+            &conn,
+            &root,
+            "camp",
+            "plan-reproduce",
+            "output",
+            Path::new("repro.md"),
+            "角色输出",
+        )
+        .unwrap();
+        let mut fake = Fake::default();
+        let result = execute(&mut conn, &root, "camp", "plan", &plan, &mut fake);
+        assert!(result.is_ok(), "{result:?}");
+        finish(&conn, "plan", true).unwrap();
+        let runs = fake.runs.lock().unwrap();
+        assert!(!runs.contains(&"debugger".to_string()));
+        assert!(runs.contains(&"backend".to_string()));
+        drop(runs);
+        assert_eq!(state(&conn, "reproduce").0, "done");
+        assert_eq!(state(&conn, "fix").0, "done");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1981,7 +2339,7 @@ mod tests {
             assert_eq!(result.is_err(), mode == "error");
             let expected = match mode {
                 "error" => "failed",
-                "stop" => "pending",
+                "stop" => "interrupted",
                 "revert" => "blocked",
                 _ => "done",
             };

@@ -22,6 +22,7 @@
 .task-status--done { color: var(--ui-success); }
 .task-status--blocked { color: var(--ui-warning); }
 .task-status--failed { color: var(--ui-error); }
+.task-status--interrupted { color: var(--ui-warning); }
 .task-detail dl { margin: 0; }
 .task-detail dl > div { margin-bottom: 20px; }
 .task-detail dt, .task-detail h3 { color: var(--ui-muted); font-size: 11px; margin: 0 0 8px; }

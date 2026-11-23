@@ -40,6 +40,8 @@ pub(crate) struct Worktree {
     root: PathBuf,
     pub path: PathBuf,
     snapshot: String,
+    claimed: bool,
+    keep: bool,
 }
 
 fn command(root: &Path) -> Command {
@@ -84,7 +86,7 @@ impl GitService {
         }
         let path = parent.join(task);
         if path.symlink_metadata().is_ok() {
-            return Err("worktree 路径已存在".into());
+            return self.claim(&path);
         }
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let index = allowed.join(format!(
@@ -139,7 +141,64 @@ impl GitService {
             root: self.root.clone(),
             path,
             snapshot,
+            claimed: false,
+            keep: false,
         })
+    }
+
+    fn common_dir(repo: &Path) -> Result<PathBuf, String> {
+        let output = output(command(repo).args(["rev-parse", "--git-common-dir"]))?;
+        let path = PathBuf::from(String::from_utf8_lossy(&output).trim());
+        let path = if path.is_absolute() {
+            path
+        } else {
+            repo.join(path)
+        };
+        path.canonicalize()
+            .map_err(|error| format!("无法访问 git 目录：{error}"))
+    }
+
+    fn claim(&self, path: &Path) -> Result<Worktree, String> {
+        if Self::common_dir(path)? != Self::common_dir(&self.root)? {
+            return Err("worktree 路径已存在但不属于当前仓库".into());
+        }
+        let top = output(command(path).args(["rev-parse", "--show-toplevel"]))?;
+        let top = PathBuf::from(String::from_utf8_lossy(&top).trim());
+        if top.canonicalize().map_err(|error| error.to_string())?
+            != path.canonicalize().map_err(|error| error.to_string())?
+        {
+            return Err("worktree 路径已存在但不是可认领的工作区".into());
+        }
+        let head = output(command(path).args(["rev-parse", "--verify", "HEAD"]))?;
+        Ok(Worktree {
+            root: self.root.clone(),
+            path: path.to_path_buf(),
+            snapshot: String::from_utf8_lossy(&head).trim().to_string(),
+            claimed: true,
+            keep: false,
+        })
+    }
+
+    pub fn is_applied(&self, patch: &[u8]) -> Result<bool, String> {
+        if patch.is_empty() {
+            return Ok(false);
+        }
+        let mut cmd = command(&self.root);
+        cmd.args(["apply", "--check", "--binary", "-R"]);
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let write = child
+            .stdin
+            .take()
+            .ok_or("无法写入 git 补丁")?
+            .write_all(patch);
+        let result = child.wait_with_output().map_err(|error| error.to_string())?;
+        write.map_err(|error| error.to_string())?;
+        Ok(result.status.success())
     }
 
     pub fn apply(&self, patch: &[u8], reverse: bool) -> Result<(), String> {
@@ -307,9 +366,91 @@ pub(crate) mod tests {
         cleanup(&root);
         cleanup(&trees);
     }
+
+    #[test]
+    fn worktree_claim_reset_external_changes_and_preserve() {
+        let root = directory("claim-root");
+        let trees = directory("claim-trees");
+        repo(&root);
+        let service = GitService::detect(&root).unwrap();
+        let tree = service.worktree(&trees, "camp", "plan-task").unwrap();
+        assert!(!tree.claimed());
+        fs::write(tree.path.join("base.txt"), "worktree\n").unwrap();
+        fs::write(tree.path.join("scope.txt"), "scope\n").unwrap();
+        let patch = tree.patch().unwrap();
+        service.apply(&patch, false).unwrap();
+        assert!(service.is_applied(&patch).unwrap());
+        fs::write(root.join("scope.txt"), "external\n").unwrap();
+        assert_eq!(
+            tree.external_changes(&["scope.txt".to_string()]).unwrap(),
+            vec!["scope.txt".to_string()]
+        );
+        let path = tree.path.clone();
+        tree.preserve();
+        assert!(path.exists());
+        let claimed = service.worktree(&trees, "camp", "plan-task").unwrap();
+        assert!(claimed.claimed());
+        claimed.reset().unwrap();
+        assert_eq!(
+            fs::read_to_string(claimed.path.join("base.txt")).unwrap(),
+            "original\n"
+        );
+        assert!(!claimed.path.join("scope.txt").exists());
+        drop(claimed);
+        cleanup(&root);
+        cleanup(&trees);
+    }
 }
 
 impl Worktree {
+    pub fn claimed(&self) -> bool {
+        self.claimed
+    }
+
+    pub fn preserve(mut self) {
+        self.keep = true;
+    }
+
+    pub fn reset(&self) -> Result<(), String> {
+        output(command(&self.path).args(["reset", "--hard", &self.snapshot]))?;
+        output(command(&self.path).args(["clean", "-fd"]))?;
+        Ok(())
+    }
+
+    pub fn external_changes(&self, scopes: &[String]) -> Result<Vec<String>, String> {
+        if scopes.is_empty() {
+            return Ok(Vec::new());
+        }
+        let index = self.path.join(".pixelcode-index");
+        let result = (|| {
+            output(
+                command(&self.root)
+                    .env("GIT_INDEX_FILE", git_path(&index).as_os_str())
+                    .args(["read-tree", &self.snapshot]),
+            )?;
+            output(
+                command(&self.root)
+                    .env("GIT_INDEX_FILE", git_path(&index).as_os_str())
+                    .args(["add", "-A"]),
+            )?;
+            let diff = output(
+                command(&self.root)
+                    .env("GIT_INDEX_FILE", git_path(&index).as_os_str())
+                    .arg("diff")
+                    .args(["--cached", "--name-only", &self.snapshot, "--"])
+                    .args(scopes),
+            )?;
+            Ok(String::from_utf8_lossy(&diff)
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect())
+        })();
+        let _ = fs::remove_file(&index);
+        result
+    }
+
     pub fn patch(&self) -> Result<Vec<u8>, String> {
         output(command(&self.path).args(["add", "-A"]))?;
         output(command(&self.path).args(["diff", "--cached", "--binary", &self.snapshot]))
@@ -318,6 +459,9 @@ impl Worktree {
 
 impl Drop for Worktree {
     fn drop(&mut self) {
+        if self.keep {
+            return;
+        }
         let _ = output(
             command(&self.root)
                 .args(["worktree", "remove", "--force"])

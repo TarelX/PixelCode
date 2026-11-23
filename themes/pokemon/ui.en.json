@@ -99,13 +99,15 @@
     "scenarios": { "bug-fix": "Bug fix", "new-project": "New project", "refactor": "Refactor", "research": "Research", "custom": "Custom" },
     "description": "Task description", "role": "Assigned partner", "dependencies": "Prerequisite tasks", "inputs": "Input artifacts", "outputs": "Output artifacts", "files": "Write scope",
     "acceptance": "Acceptance criteria", "check": "Check command · Read only", "program": "Program", "args": "Argument array", "none": "None",
-    "statuses": { "pending": "Pending", "running": "Running", "checking": "Checking", "reviewing": "In review", "done": "Done", "blocked": "Blocked", "failed": "Failed" },
+    "statuses": { "pending": "Pending", "running": "Running", "checking": "Checking", "reviewing": "In review", "done": "Done", "blocked": "Blocked", "failed": "Failed", "interrupted": "Interrupted" },
     "planStatuses": { "draft": "Draft · Not started", "approved": "Approved", "executing": "Running", "awaiting_delivery": "Awaiting delivery", "completed": "Delivered", "aborted": "Aborted" },
+    "cleanup": "Worktrees pending cleanup: ",
     "gate": {
-      "approvalTitle": "Deploy · Approve the plan", "deliveryTitle": "Delivery · Review the results",
+      "approvalTitle": "Deploy · Approve the plan", "deliveryTitle": "Delivery · Review the results", "resumeTitle": "Recovery · Continue running",
       "approvalHint": "Open any task card to change its assigned partner. After approval, the assigned partners will work on the project and the scheduler will run the checks listed below, if any.",
       "deliveryHint": "All tasks passed. Open a task card to see its artifacts, checks and reviews. Confirming records the delivery; it does not commit, merge or undo project changes.",
-      "approve": "Approve and run", "rejectDraft": "Reject draft", "deliver": "Confirm delivery", "rejectDelivery": "Reject delivery",
+      "resumeHint": "The last run was interrupted. Continuing only reschedules the remaining task cards; it never reruns completed tasks or replays git commits or merges.",
+      "approve": "Approve and run", "rejectDraft": "Reject draft", "deliver": "Confirm delivery", "rejectDelivery": "Reject delivery", "resume": "Continue",
       "assign": "Change assigned partner", "backToWall": "Back to task wall"
     }
   },

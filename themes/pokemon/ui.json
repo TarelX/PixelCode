@@ -99,13 +99,15 @@
     "scenarios": { "bug-fix": "修 bug", "new-project": "新项目", "refactor": "重构", "research": "调研", "custom": "自定义" },
     "description": "任务描述", "role": "领命伙伴", "dependencies": "前置计划卡", "inputs": "输入产物", "outputs": "输出产物", "files": "写入范围",
     "acceptance": "验收标准", "check": "检查命令 · 仅展示", "program": "程序", "args": "参数数组", "none": "无",
-    "statuses": { "pending": "待命", "running": "执行中", "checking": "检查中", "reviewing": "审查中", "done": "已完成", "blocked": "受阻", "failed": "失败" },
+    "statuses": { "pending": "待命", "running": "执行中", "checking": "检查中", "reviewing": "审查中", "done": "已完成", "blocked": "受阻", "failed": "失败", "interrupted": "已中断" },
     "planStatuses": { "draft": "草案 · 未执行", "approved": "已确认", "executing": "执行中", "awaiting_delivery": "待交付确认", "completed": "已交付", "aborted": "已中止" },
+    "cleanup": "待清理 worktree：",
     "gate": {
-      "approvalTitle": "出战 · 方案确认", "deliveryTitle": "交付 · 成果确认",
+      "approvalTitle": "出战 · 方案确认", "deliveryTitle": "交付 · 成果确认", "resumeTitle": "恢复 · 继续执行",
       "approvalHint": "打开计划卡可调整领命伙伴。批准后，所选伙伴将在项目目录执行任务，调度器将运行下列检查命令（如有）。",
       "deliveryHint": "所有计划卡均已通过。打开计划卡可查看产物、检查记录和审查意见。确认仅记录交付，不会提交、合并或撤销项目改动。",
-      "approve": "批准并执行", "rejectDraft": "拒绝草案", "deliver": "确认交付", "rejectDelivery": "拒绝交付",
+      "resumeHint": "上次运行被中断。继续只会重排剩余计划卡，不会自动重跑已完成任务，也不会重放 git 提交或合并。",
+      "approve": "批准并执行", "rejectDraft": "拒绝草案", "deliver": "确认交付", "rejectDelivery": "拒绝交付", "resume": "继续执行",
       "assign": "调整领命伙伴", "backToWall": "返回计划卡墙"
     }
   },
