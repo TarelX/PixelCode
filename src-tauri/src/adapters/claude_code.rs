@@ -1,4 +1,4 @@
-use super::{DetectResult, detect_with, run};
+use super::{DetectResult, RunOutput, detect_with, run};
 use crate::{roles::Permissions, supervisor::RunUpdate};
 use serde_json::Value;
 use std::{
@@ -35,6 +35,8 @@ pub(crate) struct StartOptions<'a> {
     pub system_prompt: &'a str,
     pub prompt: &'a str,
     pub permissions: &'a Permissions,
+    pub resume: Option<&'a str>,
+    pub persist_session: bool,
 }
 
 fn command(options: &StartOptions<'_>) -> Result<Command, String> {
@@ -88,6 +90,9 @@ fn command(options: &StartOptions<'_>) -> Result<Command, String> {
     if !model.is_empty() && model != "auto" {
         command.arg(format!("--model={model}"));
     }
+    if let Some(session) = options.resume {
+        command.arg(format!("--resume={session}"));
+    }
     if !allow.is_empty() {
         command.arg("--allowedTools").args(allow);
     }
@@ -103,8 +108,9 @@ fn command(options: &StartOptions<'_>) -> Result<Command, String> {
 fn stream(
     input: impl BufRead,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<Option<Result<String, String>>, String> {
+) -> Result<Option<Result<RunOutput, String>>, String> {
     let mut result = None;
+    let mut session_id = None;
     let mut emitted_text = false;
     let mut partials = HashMap::<usize, String>::new();
     let mut message_index = 0;
@@ -129,6 +135,9 @@ fn stream(
         };
         if !message["parent_tool_use_id"].is_null() {
             continue;
+        }
+        if let Some(id) = message.get("session_id").and_then(Value::as_str) {
+            session_id = Some(id.to_owned());
         }
         match message["type"].as_str() {
             Some("stream_event") => {
@@ -185,7 +194,10 @@ fn stream(
         if !emitted_text && !text.is_empty() {
             emit(RunUpdate::Text { text: text.into() })?;
         }
-        return Ok(Some(Ok(text.into())));
+        return Ok(Some(Ok(RunOutput {
+            text: text.into(),
+            session_id,
+        })));
     }
     let reason = result["errors"]
         .as_array()
@@ -200,7 +212,7 @@ pub(crate) fn start(
     options: StartOptions<'_>,
     control: &crate::supervisor::RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<String, String> {
+) -> Result<RunOutput, String> {
     let mut command = command(&options)?;
     let mut child = crate::process_tree::spawn(&mut command).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -277,7 +289,13 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(outcome, Some(Ok("The file is empty.".into())));
+        assert_eq!(
+            outcome,
+            Some(Ok(RunOutput {
+                text: "The file is empty.".into(),
+                session_id: Some("claude-fixture".into()),
+            }))
+        );
         assert_eq!(
             serde_json::to_value(updates.into_inner()).unwrap(),
             serde_json::json!([
@@ -335,6 +353,8 @@ mod tests {
             system_prompt: &config.system_prompt,
             prompt: "review",
             permissions: &config.permissions,
+            resume: None,
+            persist_session: false,
         })
         .unwrap();
         let args = cmd
@@ -368,6 +388,8 @@ mod tests {
             system_prompt: "-role personality\n\nskill",
             prompt: "--dangerously-skip-permissions",
             permissions: &permissions,
+            resume: None,
+            persist_session: false,
         };
         let cmd = command(&options).unwrap();
         assert_eq!(cmd.get_program(), "claude");
@@ -407,5 +429,43 @@ mod tests {
                 .any(|arg| arg.to_string_lossy().starts_with("--model"))
         );
         assert!(!args.contains(&std::ffi::OsStr::new("--allowedTools")));
+    }
+
+    #[test]
+    fn resume_uses_session_argument() {
+        let permissions = Permissions {
+            allow: vec![],
+            deny: vec![],
+        };
+        let resumed = command(&StartOptions {
+            cwd: Path::new("camp"),
+            model: "auto",
+            system_prompt: "",
+            prompt: "rework",
+            permissions: &permissions,
+            resume: Some("session-1"),
+            persist_session: true,
+        })
+        .unwrap();
+        let args = resumed
+            .get_args()
+            .map(|arg| arg.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(args.contains(&"--resume=session-1"));
+        let fresh = command(&StartOptions {
+            cwd: Path::new("camp"),
+            model: "auto",
+            system_prompt: "",
+            prompt: "rework",
+            permissions: &permissions,
+            resume: None,
+            persist_session: true,
+        })
+        .unwrap();
+        assert!(
+            !fresh
+                .get_args()
+                .any(|arg| arg.to_string_lossy().starts_with("--resume"))
+        );
     }
 }

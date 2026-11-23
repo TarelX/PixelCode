@@ -5,6 +5,7 @@ use rusqlite::{Connection, TransactionBehavior};
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_initial.sql"),
     include_str!("../migrations/002_role_task_types.sql"),
+    include_str!("../migrations/003_session_resume.sql"),
 ];
 
 pub fn open(data_dir: &Path) -> Result<Connection, Box<dyn std::error::Error>> {

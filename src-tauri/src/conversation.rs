@@ -199,10 +199,13 @@ impl Runner for LiveRunner<'_> {
                 system_prompt: &config.system_prompt,
                 prompt,
                 permissions: &config.permissions,
+                resume: None,
+                persist_session: false,
             },
             self.slot,
             &emit,
-        );
+        )
+        .map(|run| run.text);
         emit(if self.stopped() {
             RunUpdate::Stopped
         } else if let Err(message) = &result {

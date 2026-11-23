@@ -1,5 +1,5 @@
 use super::claude_code::StartOptions;
-use super::{DetectResult, detect_with, run};
+use super::{DetectResult, RunOutput, detect_with, run};
 use crate::supervisor::RunUpdate;
 use serde_json::Value;
 use std::{
@@ -35,27 +35,39 @@ fn command(options: &StartOptions<'_>) -> Command {
                 .iter()
                 .any(|rule| rule.split('(').next() == Some(tool))
     });
+    let sandbox = if writable {
+        "workspace-write"
+    } else {
+        "read-only"
+    };
     let mut command = Command::new("codex");
     command
         .current_dir(options.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .args([
-            "--ask-for-approval",
-            "never",
-            "exec",
+        .args(["--ask-for-approval", "never", "exec"]);
+    if let Some(session) = options.resume {
+        command.arg("resume").arg(session).args([
             "--json",
-            "--sandbox",
-            if writable {
-                "workspace-write"
-            } else {
-                "read-only"
-            },
             "--ignore-user-config",
             "--ignore-rules",
-            "--ephemeral",
-            "--skip-git-repo-check",
+        ]);
+    } else {
+        command.args([
+            "--json",
+            "--sandbox",
+            sandbox,
+            "--ignore-user-config",
+            "--ignore-rules",
+        ]);
+        if !options.persist_session {
+            command.arg("--ephemeral");
+        }
+    }
+    command.arg("--skip-git-repo-check");
+    command
+        .args([
             "--config",
             "sandbox_workspace_write.network_access=false",
             "--config",
@@ -79,8 +91,9 @@ fn command(options: &StartOptions<'_>) -> Command {
 fn stream(
     input: impl BufRead,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<Option<Result<String, String>>, String> {
+) -> Result<Option<Result<RunOutput, String>>, String> {
     let mut result = None;
+    let mut session_id = None;
     let mut final_text = String::new();
     let mut texts = HashMap::<String, String>::new();
     let mut emitted_text = false;
@@ -91,6 +104,11 @@ fn stream(
             continue;
         };
         match message["type"].as_str() {
+            Some("thread.started") => {
+                if let Some(id) = message["thread_id"].as_str() {
+                    session_id = Some(id.to_owned());
+                }
+            }
             Some("item.started" | "item.updated" | "item.completed") => {
                 let item = &message["item"];
                 let Some(id) = item["id"].as_str() else {
@@ -135,7 +153,10 @@ fn stream(
                 }
             }
             Some("turn.completed") if result.is_none() => {
-                result = Some(Ok(std::mem::take(&mut final_text)));
+                result = Some(Ok(RunOutput {
+                    text: std::mem::take(&mut final_text),
+                    session_id: session_id.take(),
+                }));
             }
             Some("turn.failed" | "error") => {
                 let reason = message["error"]["message"]
@@ -154,7 +175,7 @@ pub(crate) fn start(
     options: StartOptions<'_>,
     control: &crate::supervisor::RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<String, String> {
+) -> Result<RunOutput, String> {
     let mut command = command(&options);
     let mut child = crate::process_tree::spawn(&mut command).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -217,7 +238,10 @@ mod tests {
                 }
             )
             .unwrap(),
-            Some(Ok("Done.".into()))
+            Some(Ok(RunOutput {
+                text: "Done.".into(),
+                session_id: Some("thread-fixture".into()),
+            }))
         );
         assert_eq!(
             serde_json::to_value(updates.into_inner()).unwrap(),
@@ -273,6 +297,64 @@ mod tests {
     }
 
     #[test]
+    fn resume_uses_exec_resume_without_sandbox_or_ephemeral() {
+        let permissions = Permissions {
+            allow: vec!["Write".into(), "Edit".into()],
+            deny: vec![],
+        };
+        let options = StartOptions {
+            cwd: Path::new("camp"),
+            model: "auto",
+            system_prompt: "",
+            prompt: "rework",
+            permissions: &permissions,
+            resume: Some("thread-1"),
+            persist_session: true,
+        };
+        let cmd = command(&options);
+        let args = cmd
+            .get_args()
+            .map(|arg| arg.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            args.windows(4)
+                .any(|window| window == ["exec", "resume", "thread-1", "--json"])
+        );
+        assert!(!args.contains(&"--sandbox"));
+        assert!(!args.contains(&"--ephemeral"));
+
+        let fresh = command(&StartOptions {
+            cwd: Path::new("camp"),
+            model: "auto",
+            system_prompt: "",
+            prompt: "rework",
+            permissions: &permissions,
+            resume: None,
+            persist_session: true,
+        });
+        let args = fresh
+            .get_args()
+            .map(|arg| arg.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--sandbox", "workspace-write"])
+        );
+        assert!(!args.contains(&"--ephemeral"));
+
+        let ephemeral = command(&StartOptions {
+            cwd: Path::new("camp"),
+            model: "auto",
+            system_prompt: "",
+            prompt: "rework",
+            permissions: &permissions,
+            resume: None,
+            persist_session: false,
+        });
+        assert!(ephemeral.get_args().any(|arg| arg == "--ephemeral"));
+    }
+
+    #[test]
     fn reviewer_uses_read_only_sandbox() {
         let config = crate::roles::tests::reviewer_config();
         let cmd = command(&StartOptions {
@@ -281,6 +363,8 @@ mod tests {
             system_prompt: &config.system_prompt,
             prompt: "review",
             permissions: &config.permissions,
+            resume: None,
+            persist_session: false,
         });
         let args = cmd
             .get_args()
@@ -312,6 +396,8 @@ mod tests {
                 system_prompt: "Persona \"quoted\"\nSkills",
                 prompt: "--dangerously-bypass-approvals-and-sandbox",
                 permissions: &permissions,
+                resume: None,
+                persist_session: false,
             };
             let cmd = command(&options);
             assert_eq!(cmd.get_program(), "codex");

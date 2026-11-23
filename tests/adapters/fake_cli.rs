@@ -14,6 +14,14 @@ fn main() {
         thread::sleep(Duration::from_secs(120));
         return;
     }
+    if let Ok(path) = std::env::var("PIXELCODE_FAKE_ARGS_FILE") {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap();
+        writeln!(file, "{}", args.join(" ")).unwrap();
+    }
     let mut prompt = String::new();
     if io::stdin().read_to_string(&mut prompt).is_err() {
         std::process::exit(2);
@@ -40,7 +48,10 @@ fn main() {
         if codex {
             emit(&mut out, "{\"type\":\"item.started\",\"item\":{\"id\":\"msg\",\"type\":\"agent_message\",\"text\":\"working\"}}");
         } else {
-            emit(&mut out, "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\"}}");
+            emit(
+                &mut out,
+                "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\"}}",
+            );
             emit(&mut out, "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"working\"}}}");
         }
         loop {
@@ -48,16 +59,23 @@ fn main() {
         }
     }
     if codex {
+        emit(
+            &mut out,
+            "{\"type\":\"thread.started\",\"thread_id\":\"fake-codex-thread\"}",
+        );
         emit(&mut out, "{\"type\":\"item.started\",\"item\":{\"id\":\"msg\",\"type\":\"agent_message\",\"text\":\"Hello \"}}");
         thread::sleep(Duration::from_millis(50));
         emit(&mut out, "{\"type\":\"item.completed\",\"item\":{\"id\":\"msg\",\"type\":\"agent_message\",\"text\":\"Hello world\"}}");
         emit(&mut out, "{\"type\":\"turn.completed\"}");
     } else {
-        emit(&mut out, "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\"}}");
+        emit(
+            &mut out,
+            "{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\"}}",
+        );
         thread::sleep(Duration::from_millis(50));
         emit(&mut out, "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello \"}}}");
         thread::sleep(Duration::from_millis(50));
         emit(&mut out, "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"world\"}}}");
-        emit(&mut out, "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello world\"}");
+        emit(&mut out, "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"Hello world\",\"session_id\":\"fake-claude-session\"}");
     }
 }

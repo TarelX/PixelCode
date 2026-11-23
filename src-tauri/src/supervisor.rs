@@ -13,7 +13,7 @@ use serde::Serialize;
 use tauri::{Emitter, Manager, WebviewWindow};
 
 use crate::{
-    adapters::{claude_code, codex},
+    adapters::{RunOutput, claude_code, codex},
     artifacts, camps, plans, process_tree, roles,
 };
 
@@ -23,7 +23,7 @@ pub(crate) fn dispatch(
     options: claude_code::StartOptions<'_>,
     state: &RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
-) -> Result<String, String> {
+) -> Result<RunOutput, String> {
     match cli {
         "claude-code" => claude_code::start(options, state, emit),
         "codex" => codex::start(options, state, emit),
@@ -295,6 +295,8 @@ pub async fn start_role_run(
             system_prompt: &config.system_prompt,
             prompt: input.as_deref().unwrap_or(&prompt),
             permissions: &config.permissions,
+            resume: None,
+            persist_session: false,
         };
         let result = dispatch(&config.cli, options, &state, &emit);
         if state.stopped.load(Ordering::SeqCst) {
@@ -306,7 +308,8 @@ pub async fn start_role_run(
             Waiting(Vec<String>),
             Blocked(String),
         }
-        let result = result.and_then(|final_text| {
+        let result = result.and_then(|run| {
+            let final_text = run.text;
             if let Some(reason) = roles::blocked_reason(&final_text) {
                 return Ok(Outcome::Blocked(reason));
             }
