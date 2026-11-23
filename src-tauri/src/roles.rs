@@ -531,6 +531,9 @@ pub(crate) mod tests {
             .execute_batch(include_str!("../migrations/003_session_resume.sql"))
             .unwrap();
         connection
+            .execute_batch(include_str!("../migrations/004_run_events.sql"))
+            .unwrap();
+        connection
     }
 
     #[test]

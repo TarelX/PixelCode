@@ -174,14 +174,14 @@ struct LiveRunner<'a> {
 }
 impl Runner for LiveRunner<'_> {
     fn run(&self, role: &str, config: &roles::RunConfig, prompt: &str) -> Result<String, String> {
-        let run_id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let run_id = format!("{}-{}", self.id, NEXT_ID.fetch_add(1, Ordering::Relaxed));
         let emit = |update| {
             self.window
                 .emit_to(
                     self.window.label(),
                     "role-run",
                     supervisor::RoleRunEvent {
-                        run_id,
+                        run_id: run_id.clone(),
                         task_id: self.id,
                         camp_id: self.camp,
                         role_id: role,

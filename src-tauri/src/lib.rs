@@ -5,9 +5,11 @@ mod camps;
 mod conversation;
 mod db;
 mod git;
+mod notifications;
 mod plans;
 mod process_tree;
 mod roles;
+mod run_events;
 mod scheduler;
 mod settings;
 mod supervisor;
@@ -20,6 +22,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             adapters::detect_clis,
             battle_report::export_battle_report,
@@ -37,6 +40,10 @@ pub fn run() {
             scheduler::list_worktree_diagnostics,
             settings::get_locale,
             settings::set_locale,
+            settings::get_notifications_enabled,
+            settings::set_notifications_enabled,
+            run_events::run_events,
+            run_events::pending_questions,
             artifacts::read_artifact,
             artifacts::list_artifacts,
             plans::latest_plan,

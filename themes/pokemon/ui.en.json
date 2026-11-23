@@ -75,6 +75,9 @@
   "language": {
     "title": "UI language", "zh-CN": "简体中文", "en": "English", "error": "Unable to read or save the UI language: "
   },
+  "notifications": {
+    "title": "System notifications", "hint": "When the window is not in front, notify for answers needed, blocked tasks, plans ready to deliver, and failed runs.", "on": "On", "off": "Off", "error": "Unable to save notification settings: "
+  },
   "cli": {
     "label": "CLI status", "tools": "Coding tools", "settings": "Tool settings", "openSettings": "View coding tool status and settings",
     "eyebrow": "CONNECTED TOOLS", "title": "Connect your coding tools", "refresh": "Rescan CLIs",

@@ -6,6 +6,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_initial.sql"),
     include_str!("../migrations/002_role_task_types.sql"),
     include_str!("../migrations/003_session_resume.sql"),
+    include_str!("../migrations/004_run_events.sql"),
 ];
 
 pub fn open(data_dir: &Path) -> Result<Connection, Box<dyn std::error::Error>> {
@@ -65,8 +66,11 @@ mod tests {
                 "artifacts",
                 "camps",
                 "messages",
+                "notification_log",
+                "pending_questions",
                 "plans",
                 "roles",
+                "run_events",
                 "tasks"
             ]
         );

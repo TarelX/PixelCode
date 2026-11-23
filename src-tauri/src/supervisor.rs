@@ -14,7 +14,7 @@ use tauri::{Emitter, Manager, WebviewWindow};
 
 use crate::{
     adapters::{RunOutput, claude_code, codex},
-    artifacts, camps, plans, process_tree, roles,
+    artifacts, camps, notifications, plans, process_tree, roles, run_events,
 };
 
 const ROLE_RUN_EVENT: &str = "role-run";
@@ -215,13 +215,19 @@ pub(crate) enum RunUpdate {
 
 #[derive(Clone, Serialize)]
 pub(crate) struct RoleRunEvent<'a> {
-    pub(crate) run_id: u64,
+    pub(crate) run_id: String,
     pub(crate) task_id: &'a str,
     pub(crate) artifact: Option<artifacts::Artifact>,
     pub(crate) camp_id: &'a str,
     pub(crate) role_id: &'a str,
     #[serde(flatten)]
     pub(crate) update: RunUpdate,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ClarificationQuestions {
+    pub(crate) questions: Vec<String>,
+    pub(crate) pending_id: String,
 }
 
 #[tauri::command]
@@ -232,11 +238,31 @@ pub async fn start_role_run(
     loadout_index: usize,
     prompt: String,
     clarification: Option<plans::Clarification>,
-) -> Result<Option<Vec<String>>, String> {
+    pending_answer: Option<run_events::PendingAnswerRequest>,
+) -> Result<Option<ClarificationQuestions>, String> {
     if prompt.trim().is_empty() {
         return Err("任务内容不能为空".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
+        let (camp_id, mut role_id, mut loadout_index, mut prompt, mut clarification) =
+            (camp_id, role_id, loadout_index, prompt, clarification);
+        if let Some(pending) = pending_answer {
+            let answer = clarification.as_ref().and_then(|item| item.answer.clone());
+            let state = window.state::<Mutex<Connection>>();
+            let connection = state.lock().map_err(|_| "无法访问基地数据库")?;
+            match run_events::claim(&connection, &camp_id, &pending.id, &pending.key, answer.as_deref())? {
+                Some(pending) => {
+                    role_id = pending.role_id;
+                    loadout_index = pending.loadout_index;
+                    prompt = pending.request;
+                    clarification = Some(plans::Clarification {
+                        questions: pending.questions,
+                        answer,
+                    });
+                }
+                None => return Ok(None),
+            }
+        }
         let state = window.state::<RunSlot>();
         let _active = state.acquire()?;
         let (cwd, mut config, roster) = {
@@ -274,19 +300,28 @@ pub async fn start_role_run(
                 }
                 output.borrow_mut().push_str(text);
             }
+            let event = RoleRunEvent {
+                run_id: task_id.clone(),
+                task_id: &task_id,
+                artifact: artifact.borrow().clone(),
+                camp_id: &camp_id,
+                role_id: &role_id,
+                update,
+            };
+            let payload = serde_json::to_value(&event)
+                .map_err(|error| format!("无法编码角色运行事件：{error}"))?;
+            let kind = payload
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("event")
+                .to_string();
+            {
+                let state = window.state::<Mutex<Connection>>();
+                let connection = state.lock().map_err(|_| "无法访问运行事件数据库")?;
+                run_events::append(&connection, &task_id, &task_id, &kind, payload.clone())?;
+            }
             window
-                .emit_to(
-                    window.label(),
-                    ROLE_RUN_EVENT,
-                    RoleRunEvent {
-                        run_id,
-                        task_id: &task_id,
-                        artifact: artifact.borrow().clone(),
-                        camp_id: &camp_id,
-                        role_id: &role_id,
-                        update,
-                    },
-                )
+                .emit_to(window.label(), ROLE_RUN_EVENT, payload)
                 .map_err(|error| format!("无法发送角色运行事件：{error}"))
         };
         let options = claude_code::StartOptions {
@@ -305,7 +340,7 @@ pub async fn start_role_run(
         }
         enum Outcome {
             Done,
-            Waiting(Vec<String>),
+            Waiting { questions: Vec<String>, pending_id: String },
             Blocked(String),
         }
         let result = result.and_then(|run| {
@@ -317,7 +352,24 @@ pub async fn start_role_run(
                 match plans::parse(&final_text, roster, clarification.as_ref())? {
                     plans::Reply::Draft(plan) => Some(plan),
                     plans::Reply::Clarify(reply) => {
-                        return Ok(Outcome::Waiting(reply.questions));
+                        let state = window.state::<Mutex<Connection>>();
+                        let connection = state.lock().map_err(|_| "无法访问待答数据库")?;
+                        let pending_id = run_events::create_pending(
+                            &connection,
+                            run_events::PendingQuestionInput {
+                                camp_id: &camp_id,
+                                run_id: &task_id,
+                                task_id: &task_id,
+                                role_id: &role_id,
+                                loadout_index,
+                                request: &prompt,
+                                questions: &reply.questions,
+                            },
+                        )?;
+                        return Ok(Outcome::Waiting {
+                            questions: reply.questions,
+                            pending_id,
+                        });
                     }
                 }
             } else {
@@ -351,20 +403,56 @@ pub async fn start_role_run(
         match result {
             Ok(Outcome::Blocked(message)) => {
                 emit(RunUpdate::Blocked { message })?;
+                let state = window.state::<Mutex<Connection>>();
+                if let Ok(connection) = state.lock() {
+                    let _ = notifications::notify(
+                        &window,
+                        &connection,
+                        &format!("role-blocked:{task_id}"),
+                        notifications::Kind::Blocked,
+                        &camp_id,
+                        None,
+                        Some(task_id.as_str()),
+                    );
+                }
                 Ok(None)
             }
             Ok(Outcome::Done) => {
                 emit(RunUpdate::Completed)?;
                 Ok(None)
             }
-            Ok(Outcome::Waiting(questions)) => {
+            Ok(Outcome::Waiting { questions, pending_id }) => {
                 emit(RunUpdate::Waiting)?;
-                Ok(Some(questions))
+                let state = window.state::<Mutex<Connection>>();
+                if let Ok(connection) = state.lock() {
+                    let _ = notifications::notify(
+                        &window,
+                        &connection,
+                        &format!("needs-answer:{pending_id}"),
+                        notifications::Kind::NeedsAnswer,
+                        &camp_id,
+                        None,
+                        Some(task_id.as_str()),
+                    );
+                }
+                Ok(Some(ClarificationQuestions { questions, pending_id }))
             }
             Err(message) => {
                 let _ = emit(RunUpdate::Failed {
                     message: message.clone(),
                 });
+                let state = window.state::<Mutex<Connection>>();
+                if let Ok(connection) = state.lock() {
+                    let _ = notifications::notify(
+                        &window,
+                        &connection,
+                        &format!("role-failed:{task_id}"),
+                        notifications::Kind::Failed,
+                        &camp_id,
+                        None,
+                        Some(task_id.as_str()),
+                    );
+                }
                 Err(message)
             }
         }

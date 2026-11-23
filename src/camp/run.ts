@@ -5,7 +5,7 @@ import type { Artifact } from "../orchestrator/artifact-manager";
 
 export interface RoleRun {
   prompt?: string;
-  run_id: number;
+  run_id: string;
   task_id: string;
   artifact?: Artifact;
   status: "running" | "waiting" | "completed" | "failed" | "blocked" | "stopped";
@@ -14,7 +14,7 @@ export interface RoleRun {
   error: string;
 }
 interface RunEvent {
-  run_id: number;
+  run_id: string;
   task_id: string;
   artifact?: Artifact;
   camp_id: string;
@@ -28,6 +28,20 @@ export interface Clarification {
   questions: string[];
   answer: string | null;
 }
+export interface CaptainQuestions {
+  questions: string[];
+  pending_id: string;
+}
+export interface PendingQuestion {
+  id: string;
+  camp_id: string;
+  role_id: string;
+  loadout_index: number;
+  request: string;
+  questions: string[];
+  answer: string | null;
+  created_at: number;
+}
 
 export const useRuns = create<{
   runs: Record<string, RoleRun>;
@@ -36,7 +50,7 @@ export const useRuns = create<{
   error: string;
   receive: (event: RunEvent) => void;
   dismiss: (id: string) => void;
-  start: (campId: string, roleId: string, loadoutIndex: number, prompt: string, clarification?: Clarification) => Promise<string[] | null>;
+  start: (campId: string, roleId: string, loadoutIndex: number, prompt: string, clarification?: Clarification, pendingQuestionId?: string | null, answerKey?: string | null) => Promise<CaptainQuestions | null>;
   stop: () => Promise<void>;
 }>((set) => ({
   runs: {}, prompts: {}, busy: false, error: "",
@@ -57,11 +71,13 @@ export const useRuns = create<{
       ? Object.fromEntries(Object.entries(state.prompts).filter(([id]) => id !== event.role_id)) : state.prompts };
   }),
   dismiss: (id) => set((state) => ({ runs: Object.fromEntries(Object.entries(state.runs).filter(([key]) => key !== id)) })),
-  start: async (campId, roleId, loadoutIndex, prompt, clarification) => {
+  start: async (campId, roleId, loadoutIndex, prompt, clarification, pendingQuestionId = null, answerKey = null) => {
     set({ busy: true, error: "" });
     set((state) => ({ prompts: { ...state.prompts, [roleId]: prompt } }));
-    try { return await invoke<string[] | null>("start_role_run", { campId, roleId, loadoutIndex, prompt, clarification }); }
-    catch (error) { set({ error: String(error) }); return null; }
+    try {
+      const pendingAnswer = pendingQuestionId ? { id: pendingQuestionId, key: answerKey ?? "" } : null;
+      return await invoke<CaptainQuestions | null>("start_role_run", { campId, roleId, loadoutIndex, prompt, clarification, pendingAnswer });
+    } catch (error) { set({ error: String(error) }); return null; }
     finally { set((state) => ({ busy: false, prompts: Object.fromEntries(Object.entries(state.prompts).filter(([id]) => id !== roleId)) })); }
   },
   stop: async () => {
@@ -70,8 +86,12 @@ export const useRuns = create<{
   },
 }));
 
-export function listenToRuns(campId: string) {
+export async function listenToRuns(campId: string) {
   useRuns.setState({ runs: {}, prompts: {}, error: "" });
+  const events = await invoke<RunEvent[]>("run_events", { campId }).catch(() => [] as RunEvent[]);
+  for (const event of events ?? []) {
+    if (event.camp_id === campId) useRuns.getState().receive(event);
+  }
   return listen<RunEvent>("role-run", ({ payload }) => {
     if (payload.camp_id === campId) useRuns.getState().receive(payload);
   });

@@ -21,7 +21,7 @@ async function store() {
   await exports.listenToRuns("camp");
   return {
     state: () => exports.useRuns.getState(),
-    event: (type, rest = {}) => callback({ payload: { camp_id: "camp", role_id: "role", run_id: 1, type, ...rest } }),
+    event: (type, rest = {}) => callback({ payload: { camp_id: "camp", role_id: "role", run_id: "run-1", type, ...rest } }),
     fail: (error) => { failure = error; },
     reply: (value) => { result = value; },
     request: () => request,
@@ -31,17 +31,17 @@ async function store() {
 test("captain can pause for questions and resume with a delegated answer", async () => {
   const run = await store();
   const questions = ["Which browser?"];
-  run.reply(questions);
-  assert.deepEqual(await run.state().start("camp", "captain", 0, "Fix login"), questions);
+  run.reply({ questions, pending_id: "pending-1" });
+  assert.deepEqual(await run.state().start("camp", "captain", 0, "Fix login"), { questions, pending_id: "pending-1" });
   run.event("started");
   run.event("waiting");
   assert.equal(run.state().runs.role.status, "waiting");
   assert.equal(run.state().runs.role.artifact, undefined);
   run.reply(null);
-  assert.equal(await run.state().start("camp", "captain", 0, "Fix login", { questions, answer: null }), null);
+  assert.equal(await run.state().start("camp", "captain", 0, "Fix login", { questions, answer: null }, "pending-1", "key-1"), null);
   assert.deepEqual(run.request(), {
     name: "start_role_run",
-    args: { campId: "camp", roleId: "captain", loadoutIndex: 0, prompt: "Fix login", clarification: { questions, answer: null } },
+    args: { campId: "camp", roleId: "captain", loadoutIndex: 0, prompt: "Fix login", clarification: { questions, answer: null }, pendingAnswer: { id: "pending-1", key: "key-1" } },
   });
 });
 
@@ -55,7 +55,7 @@ test("stream accumulation, tool, completion, dismissal, and stale or other-camp 
   run.event("text", { text: "Reading " });
   run.event("text", { text: "notes" });
   run.event("tool", { name: "Read" });
-  run.event("text", { run_id: 2, text: "stale" });
+  run.event("text", { run_id: "run-2", text: "stale" });
   assert.equal(run.state().runs.role.text, "Reading notes");
   assert.equal(run.state().runs.role.tool, "Read");
   run.event("completed");
@@ -72,8 +72,8 @@ test("failed and stopped states, bounded text, and command errors", async () => 
   run.event("failed", { message: "CLI unavailable" });
   assert.equal(run.state().runs.role.error, "CLI unavailable");
   assert.equal(run.state().runs.role.status, "failed");
-  run.event("started", { run_id: 2 });
-  run.event("stopped", { run_id: 2 });
+  run.event("started", { run_id: "run-2" });
+  run.event("stopped", { run_id: "run-2" });
   assert.equal(run.state().runs.role.status, "stopped");
   assert.equal(run.state().runs.role.error, "");
   run.fail("Cannot launch CLI");
@@ -101,9 +101,9 @@ test("completion retains task and artifact metadata without leaking it into a ne
   run.event("completed", { task_id: "task", artifact });
   assert.equal(run.state().runs.role.task_id, "task");
   assert.deepEqual(run.state().runs.role.artifact, artifact);
-  run.event("started", { run_id: 2, task_id: "next-task" });
+  run.event("started", { run_id: "run-2", task_id: "next-task" });
   assert.equal(run.state().runs.role.artifact, undefined);
-  run.event("failed", { run_id: 2, message: "无法保存产物记录" });
+  run.event("failed", { run_id: "run-2", message: "无法保存产物记录" });
   assert.equal(run.state().runs.role.artifact, undefined);
   assert.equal(run.state().runs.role.error, "无法保存产物记录");
 });

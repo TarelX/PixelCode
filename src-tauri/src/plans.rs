@@ -115,8 +115,8 @@ pub(crate) fn decide_delivery(
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Clarification {
-    questions: Vec<String>,
-    answer: Option<String>,
+    pub(crate) questions: Vec<String>,
+    pub(crate) answer: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
