@@ -17,8 +17,9 @@ use crate::{
     adapters::claude_code::StartOptions,
     artifacts, camps,
     git::GitService,
+    notifications,
     plans::{self, CheckCommand, Plan},
-    roles,
+    roles, run_events,
     supervisor::{self, RunSlot},
 };
 
@@ -329,9 +330,8 @@ fn scopes_overlap(left: &[String], right: &[String]) -> bool {
             .any(|a| right.iter().any(|b| paths_overlap(a, b)))
 }
 
-fn status(
+fn persist_status(
     conn: &Connection,
-    runner: &impl Runner,
     event: &mut TaskEvent,
     next: &str,
     message: Option<String>,
@@ -366,7 +366,21 @@ fn status(
         tx.execute("INSERT INTO messages (id,task_id,role,type,content,created_at) VALUES (?1,?2,'system','scheduler',?3,unixepoch())",
             params![format!("{}-{next}-{}-{}", event.task_id, event.attempts, event.review_rounds), event.task_id, message]).map_err(db_error)?;
     }
-    tx.commit().map_err(db_error)?;
+    let payload = serde_json::to_value(&*event)
+        .map_err(|error| format!("无法编码计划卡状态事件：{error}"))?;
+    run_events::append(&tx, &event.plan_id, &event.task_id, &event.status, payload)?;
+    tx.commit().map_err(db_error)
+}
+
+#[cfg(test)]
+fn status(
+    conn: &Connection,
+    runner: &impl Runner,
+    event: &mut TaskEvent,
+    next: &str,
+    message: Option<String>,
+) -> Result<(), String> {
+    persist_status(conn, event, next, message)?;
     runner.emit(event)
 }
 
@@ -552,7 +566,11 @@ impl<R: Runner> Execution<'_, R> {
         next: &str,
         message: Option<String>,
     ) -> Result<(), String> {
-        status(&*database(self.conn)?, self.runner, event, next, message)
+        {
+            let connection = database(self.conn)?;
+            persist_status(&connection, event, next, message)?;
+        }
+        self.runner.emit(event)
     }
 
     fn artifact(
@@ -967,7 +985,27 @@ impl Runner for LiveRunner<'_> {
     fn emit(&self, event: &TaskEvent) -> Result<(), String> {
         self.window
             .emit_to(self.window.label(), "plan-task", event)
-            .map_err(|e| format!("无法发送计划卡状态事件：{e}"))
+            .map_err(|e| format!("无法发送计划卡状态事件：{e}"))?;
+        let kind = match event.status.as_str() {
+            "blocked" => Some(notifications::Kind::Blocked),
+            "failed" => Some(notifications::Kind::Failed),
+            _ => None,
+        };
+        if let Some(kind) = kind
+            && let Ok(connection) = self.conn.lock()
+        {
+            let event_id = format!("plan-task-{}-{}-{}", event.plan_id, event.task_id, event.status);
+            let _ = notifications::notify(
+                self.window,
+                &connection,
+                &event_id,
+                kind,
+                self.camp,
+                Some(&event.plan_id),
+                Some(&event.task_id),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -1006,6 +1044,27 @@ fn run_plan(
         result.is_ok() && !slot.is_stopped(),
     );
     final_status?;
+    if result.is_ok() && !slot.is_stopped() {
+        let connection = database(&conn)?;
+        let status = connection
+            .query_row(
+                "SELECT status FROM plans WHERE id = ?1",
+                params![plan_id],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(db_error)?;
+        if status == "awaiting_delivery" {
+            let _ = notifications::notify(
+                window,
+                &connection,
+                &format!("plan-ready:{plan_id}"),
+                notifications::Kind::ReadyToDeliver,
+                camp_id,
+                Some(plan_id),
+                None,
+            );
+        }
+    }
     result
 }
 

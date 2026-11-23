@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useRoster } from "../camp/roster";
-import { useRuns, type Clarification } from "../camp/run";
+import { useRuns, type PendingQuestion } from "../camp/run";
 import { PixelDialog } from "./PixelDialog";
 import { useI18n, roleName } from "../i18n";
 import { RoleAvatar } from "./components/RoleAvatar";
@@ -8,6 +9,31 @@ import { PixelIcon } from "./components/PixelIcon";
 import { ComposerPicker } from "./components/ComposerPicker";
 
 interface Assignment { roleId: string; index: number; request: string }
+interface Followup {
+  roleId: string;
+  loadoutIndex: number;
+  request: string;
+  questions: string[];
+  pendingId: string;
+  answerKey: string;
+}
+
+function newAnswerKey() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `answer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function followupFromPending(item: PendingQuestion): Followup {
+  return {
+    roleId: item.role_id,
+    loadoutIndex: item.loadout_index,
+    request: item.request,
+    questions: item.questions,
+    pendingId: item.id,
+    answerKey: newAnswerKey(),
+  };
+}
 
 export function TaskPanel({ campId, ready, onConfigure }: { campId: string; ready: boolean; onConfigure: () => void }) {
   const { locale, theme } = useI18n();
@@ -17,22 +43,59 @@ export function TaskPanel({ campId, ready, onConfigure }: { campId: string; read
   const { busy, error, start, stop, dismiss } = useRuns();
   const [prompt, setPrompt] = useState("");
   const [choice, setChoice] = useState({ roleId: "", index: 0 });
-  const [followup, setFollowup] = useState<{ assignment: Assignment; questions: string[] } | null>(null);
+  const [followup, setFollowup] = useState<Followup | null>(null);
   const [answer, setAnswer] = useState("");
   const index = choice.roleId === role?.id ? choice.index : 0;
   const captain = role?.role_type === "captain";
-  async function assign(assignment: Assignment, clarification?: Clarification) {
+  useEffect(() => {
+    let cancelled = false;
+    invoke<PendingQuestion[]>("pending_questions", { campId })
+      .then((items) => {
+        if (!cancelled && items[0]) setFollowup(followupFromPending(items[0]));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [campId]);
+  async function assign(assignment: Assignment) {
     setFollowup(null);
     setAnswer("");
-    const questions = await start(campId, assignment.roleId, assignment.index, assignment.request, clarification);
-    if (questions?.length) setFollowup({ assignment, questions });
+    const result = await start(campId, assignment.roleId, assignment.index, assignment.request);
+    if (result?.questions.length) {
+      setFollowup({
+        roleId: assignment.roleId,
+        loadoutIndex: assignment.index,
+        request: assignment.request,
+        questions: result.questions,
+        pendingId: result.pending_id,
+        answerKey: newAnswerKey(),
+      });
+    }
+  }
+  async function answerFollowup(response: string | null) {
+    if (!followup) return;
+    const current = followup;
+    setFollowup(null);
+    setAnswer("");
+    const result = await start(
+      campId,
+      current.roleId,
+      current.loadoutIndex,
+      current.request,
+      { questions: current.questions, answer: response },
+      current.pendingId,
+      current.answerKey,
+    );
+    if (result?.questions.length) {
+      setFollowup({ ...current, questions: result.questions, pendingId: result.pending_id, answerKey: newAnswerKey() });
+    }
   }
   function clarify(response: string | null) {
-    if (followup) void assign(followup.assignment, { questions: followup.questions, answer: response });
+    void answerFollowup(response);
   }
   function cancelClarification() {
-    if (followup) dismiss(followup.assignment.roleId);
+    if (followup) dismiss(followup.roleId);
     setFollowup(null);
+    setAnswer("");
   }
   function submit() {
     if (ready && role && !busy && prompt.trim()) void assign({ roleId: role.id, index, request: prompt.trim() });
