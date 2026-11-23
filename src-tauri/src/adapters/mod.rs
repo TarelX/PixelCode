@@ -25,6 +25,27 @@ pub struct DetectResult {
     pub error: Option<String>,
 }
 
+#[derive(Debug, PartialEq)]
+pub(crate) struct RunOutput {
+    pub text: String,
+    pub session_id: Option<String>,
+}
+
+impl From<String> for RunOutput {
+    fn from(text: String) -> Self {
+        Self {
+            text,
+            session_id: None,
+        }
+    }
+}
+
+impl From<&str> for RunOutput {
+    fn from(text: &str) -> Self {
+        text.to_owned().into()
+    }
+}
+
 pub(super) fn run(binary: &str, args: &[&str]) -> io::Result<Output> {
     let mut command = Command::new(binary);
     command
@@ -240,14 +261,13 @@ mod tests {
     struct FakeCli {
         _path: EnvGuard,
         _pid_file: EnvGuard,
+        _args_file: EnvGuard,
         root: std::path::PathBuf,
     }
     impl FakeCli {
         fn new() -> Self {
-            let root = std::env::temp_dir().join(format!(
-                "pixelcode-fake-cli-{}",
-                std::process::id()
-            ));
+            let root =
+                std::env::temp_dir().join(format!("pixelcode-fake-cli-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&root);
             std::fs::create_dir_all(&root).unwrap();
             let source = root.join("fake_cli.rs");
@@ -283,9 +303,14 @@ mod tests {
                 "PIXELCODE_FAKE_PID_FILE",
                 root.join("grandchild.pid").into_os_string(),
             );
+            let args_guard = EnvGuard::set(
+                "PIXELCODE_FAKE_ARGS_FILE",
+                root.join("args.log").into_os_string(),
+            );
             Self {
                 _path: path_guard,
                 _pid_file: pid_guard,
+                _args_file: args_guard,
                 root,
             }
         }
@@ -307,6 +332,8 @@ mod tests {
             system_prompt: "",
             prompt,
             permissions,
+            resume: None,
+            persist_session: false,
         }
     }
 
@@ -352,7 +379,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(result, "Hello world");
+        assert_eq!(result.text, "Hello world");
         assert_eq!(
             serde_json::to_value(updates.into_inner()).unwrap(),
             serde_json::json!([
@@ -361,6 +388,7 @@ mod tests {
                 {"type":"text","text":"world"}
             ])
         );
+        assert_eq!(result.session_id.as_deref(), Some("fake-claude-session"));
 
         let updates = std::cell::RefCell::new(Vec::new());
         let result = codex::start(
@@ -372,7 +400,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(result, "Hello world");
+        assert_eq!(result.text, "Hello world");
         assert_eq!(
             serde_json::to_value(updates.into_inner()).unwrap(),
             serde_json::json!([
@@ -381,14 +409,47 @@ mod tests {
                 {"type":"text","text":"world"}
             ])
         );
+        assert_eq!(result.session_id.as_deref(), Some("fake-codex-thread"));
+
+        let mut options = fake_options(&cwd, "continue", &permissions);
+        options.resume = Some("claude-session-123");
+        options.persist_session = true;
+        let result = claude_code::start(options, &slot, &|_| Ok(())).unwrap();
+        assert_eq!(result.text, "Hello world");
+
+        let write_permissions = crate::roles::Permissions {
+            allow: vec!["Write".into(), "Edit".into()],
+            deny: vec![],
+        };
+        let mut options = fake_options(&cwd, "continue", &write_permissions);
+        options.resume = Some("thread-123");
+        options.persist_session = true;
+        let result = codex::start(options, &slot, &|_| Ok(())).unwrap();
+        assert_eq!(result.text, "Hello world");
+
+        let args_log = std::fs::read_to_string(fake.root.join("args.log")).unwrap();
+        let claude_resume = args_log
+            .lines()
+            .find(|line| line.contains("--resume=claude-session-123"))
+            .unwrap();
+        assert!(claude_resume.contains("--output-format stream-json"));
+        let codex_resume = args_log
+            .lines()
+            .find(|line| line.contains("exec resume thread-123"))
+            .unwrap();
+        assert!(codex_resume.contains("--json"));
+        assert!(codex_resume.contains("--config sandbox_mode=workspace-write"));
+        assert!(!codex_resume.contains("--sandbox"));
+        assert!(!codex_resume.contains("--ephemeral"));
 
         let slot = crate::supervisor::RunSlot::default();
-        let error = claude_code::start(
-            fake_options(&cwd, "abort", &permissions),
-            &slot,
-            &|_| Ok(()),
-        )
-        .unwrap_err();
+        let error =
+            claude_code::start(
+                fake_options(&cwd, "abort", &permissions),
+                &slot,
+                &|_| Ok(()),
+            )
+            .unwrap_err();
         assert!(error.contains("fake cli abort"), "{error}");
         let slot = crate::supervisor::RunSlot::default();
         let error = codex::start(

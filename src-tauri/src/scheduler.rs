@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use rusqlite::{Connection, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, WebviewWindow};
 
@@ -33,8 +33,40 @@ struct TaskEvent {
     message: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SessionRef {
+    cli: String,
+    id: String,
+}
+
+struct RunOutput {
+    text: String,
+    session: Option<SessionRef>,
+}
+
+impl From<String> for RunOutput {
+    fn from(text: String) -> Self {
+        Self {
+            text,
+            session: None,
+        }
+    }
+}
+
+impl From<&str> for RunOutput {
+    fn from(text: &str) -> Self {
+        text.to_owned().into()
+    }
+}
+
 trait Runner: Sync {
-    fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String>;
+    fn run(
+        &self,
+        role: &str,
+        prompt: &str,
+        cwd: &Path,
+        resume: Option<&SessionRef>,
+    ) -> Result<RunOutput, String>;
     fn check(&self, command: &CheckCommand, cwd: &Path) -> Result<(bool, String), String>;
     fn stopped(&self) -> bool;
     fn emit(&self, event: &TaskEvent) -> Result<(), String>;
@@ -42,6 +74,35 @@ trait Runner: Sync {
 
 fn db_error(error: rusqlite::Error) -> String {
     format!("无法更新计划卡执行记录：{error}")
+}
+
+fn stored_session(conn: &Connection, task_id: &str) -> Result<Option<SessionRef>, String> {
+    let row = conn
+        .query_row(
+            "SELECT session_cli, session_id FROM tasks WHERE id=?1",
+            [task_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(db_error)?;
+    Ok(row.and_then(|(cli, id)| match (cli, id) {
+        (Some(cli), Some(id)) if !id.trim().is_empty() => Some(SessionRef { cli, id }),
+        _ => None,
+    }))
+}
+
+fn save_session(conn: &Connection, task_id: &str, session: &SessionRef) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET session_cli=?1,session_id=?2,updated_at=unixepoch() WHERE id=?3",
+        params![session.cli, session.id, task_id],
+    )
+    .map_err(db_error)?;
+    Ok(())
 }
 
 fn approve(
@@ -188,6 +249,21 @@ fn tail(output: &str) -> &str {
         start += 1;
     }
     &output[start..]
+}
+
+fn rework_feedback(
+    message: String,
+    session: Option<&SessionRef>,
+    artifact: &artifacts::Artifact,
+) -> String {
+    if session.is_some() {
+        return message;
+    }
+    format!(
+        "{message}\n产物引用：{}（{}）",
+        artifact.file_path,
+        artifact.absolute_path.display()
+    )
 }
 
 #[derive(Deserialize)]
@@ -346,7 +422,7 @@ impl<R: Runner> Execution<'_, R> {
         kind: &str,
         name: &str,
         content: &str,
-    ) -> Result<(), String> {
+    ) -> Result<artifacts::Artifact, String> {
         artifacts::write_artifact(
             &*database(self.conn)?,
             self.root,
@@ -355,8 +431,7 @@ impl<R: Runner> Execution<'_, R> {
             kind,
             Path::new(name),
             content,
-        )?;
-        Ok(())
+        )
     }
 
     fn task(
@@ -415,14 +490,18 @@ impl<R: Runner> Execution<'_, R> {
                 .as_ref()
                 .map_or(self.cwd, |tree| tree.path.as_path());
             let mut feedback = String::new();
+            let mut session = stored_session(&*database(self.conn)?, &event.task_id)?;
             loop {
                 if self.runner.stopped() {
                     return Ok(false);
                 }
                 self.status(&mut event, "running", None)?;
-                let output = self
-                    .runner
-                    .run(&task.role_id, &format!("{prompt}\n{feedback}"), cwd);
+                let output = self.runner.run(
+                    &task.role_id,
+                    &format!("{prompt}\n{feedback}"),
+                    cwd,
+                    session.as_ref(),
+                );
                 let patch = worktree
                     .as_ref()
                     .map(|tree| tree.patch())
@@ -436,8 +515,13 @@ impl<R: Runner> Execution<'_, R> {
                 if self.runner.stopped() {
                     return Ok(false);
                 }
-                let output = output?;
-                self.artifact(
+                let run = output?;
+                if !is_reviewer && let Some(next) = run.session.clone() {
+                    save_session(&*database(self.conn)?, &event.task_id, &next)?;
+                    session = Some(next);
+                }
+                let output = run.text;
+                let output_artifact = self.artifact(
                     &event,
                     "output",
                     task.output_artifacts
@@ -487,7 +571,11 @@ impl<R: Runner> Execution<'_, R> {
                     };
                     if let Some(log) = failure {
                         event.attempts += 1;
-                        let feedback = format!("检查失败，请返工：\n{}", tail(&log));
+                        let feedback = rework_feedback(
+                            format!("检查失败，请返工：\n{}", tail(&log)),
+                            session.as_ref(),
+                            &output_artifact,
+                        );
                         return Ok(if event.attempts > 3 {
                             Attempt::Blocked(feedback)
                         } else {
@@ -502,7 +590,13 @@ impl<R: Runner> Execution<'_, R> {
                     } else {
                         let reviewer = reviewer.ok_or("基地缺少审查员角色")?;
                         self.status(&mut event, "reviewing", None)?;
-                        let text = self.runner.run(&reviewer.id, &format!("审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"), cwd)?;
+                        let review = self.runner.run(
+                            &reviewer.id,
+                            &format!("审查以下任务及产物。{REVIEW_VERDICT}\n{prompt}\n角色产物：\n{output}"),
+                            cwd,
+                            None,
+                        )?;
+                        let text = review.text;
                         if self.runner.stopped() {
                             return Ok(Attempt::Stopped);
                         }
@@ -512,7 +606,11 @@ impl<R: Runner> Execution<'_, R> {
                         }
                         if let Some(reason) = review_rejection(&text) {
                             event.review_rounds += 1;
-                            let feedback = format!("审查打回，请返工：{reason}");
+                            let feedback = rework_feedback(
+                                format!("审查打回，请返工：{reason}"),
+                                session.as_ref(),
+                                &output_artifact,
+                            );
                             return Ok(if event.review_rounds > 3 {
                                 Attempt::Blocked(feedback)
                             } else {
@@ -609,9 +707,18 @@ struct LiveRunner<'a> {
 }
 
 impl Runner for LiveRunner<'_> {
-    fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String> {
+    fn run(
+        &self,
+        role: &str,
+        prompt: &str,
+        cwd: &Path,
+        resume: Option<&SessionRef>,
+    ) -> Result<RunOutput, String> {
         let config = roles::run_config(&*database(self.conn)?, self.camp, role, 0)?;
-        supervisor::dispatch(
+        let resume = resume
+            .filter(|session| session.cli == config.cli)
+            .map(|session| session.id.as_str());
+        let run = supervisor::dispatch(
             &config.cli,
             StartOptions {
                 cwd,
@@ -619,10 +726,21 @@ impl Runner for LiveRunner<'_> {
                 system_prompt: &config.system_prompt,
                 prompt,
                 permissions: &config.permissions,
+                resume,
+                persist_session: !config.is_reviewer,
             },
             self.slot,
             &|_| Ok(()),
-        )
+        )?;
+        Ok(RunOutput {
+            text: run.text,
+            session: run.session_id.and_then(|id| {
+                (!id.trim().is_empty()).then(|| SessionRef {
+                    cli: config.cli.clone(),
+                    id,
+                })
+            }),
+        })
     }
     fn check(&self, command: &CheckCommand, cwd: &Path) -> Result<(bool, String), String> {
         check(command, cwd, self.slot)
@@ -710,10 +828,22 @@ mod tests {
         empty: u32,
         blocked: bool,
         blocked_review: bool,
+        sessions: bool,
+        resumes: Mutex<Vec<Option<String>>>,
     }
     impl Runner for Fake {
-        fn run(&self, role: &str, prompt: &str, _: &Path) -> Result<String, String> {
+        fn run(
+            &self,
+            role: &str,
+            prompt: &str,
+            _: &Path,
+            resume: Option<&SessionRef>,
+        ) -> Result<RunOutput, String> {
             self.runs.lock().unwrap().push(role.into());
+            self.resumes
+                .lock()
+                .unwrap()
+                .push(resume.map(|session| session.id.clone()));
             if self.error {
                 return Err("无法启动角色 CLI".into());
             }
@@ -735,20 +865,32 @@ mod tests {
                 return Ok(format!(
                     "审查已完成。\n```json\n{}\n```",
                     serde_json::json!({"verdict": verdict, "reason": "审查说明"})
-                ));
+                )
+                .into());
             }
             let mut outputs = self.outputs.lock().unwrap();
             *outputs += 1;
-            if *outputs <= self.empty {
-                return Ok(" \n".into());
-            }
             if role == "backend" {
                 assert!(prompt.contains("输入产物 repro.md：\n角色输出"));
             }
             if self.blocked {
                 return Ok("分析完成。\nBLOCKED: 需要 git push 权限".into());
             }
-            Ok("角色输出".into())
+            let output = if *outputs <= self.empty {
+                " \n"
+            } else {
+                "角色输出"
+            };
+            if self.sessions {
+                return Ok(RunOutput {
+                    text: output.into(),
+                    session: Some(SessionRef {
+                        cli: "fake-cli".into(),
+                        id: format!("session-{role}"),
+                    }),
+                });
+            }
+            Ok(output.into())
         }
         fn check(&self, _: &CheckCommand, _: &Path) -> Result<(bool, String), String> {
             let mut checks = self.checks.lock().unwrap();
@@ -961,6 +1103,59 @@ mod tests {
     }
 
     #[test]
+    fn check_rework_resumes_persisted_session() {
+        let mut fake = Fake {
+            failures: 1,
+            sessions: true,
+            ..Fake::default()
+        };
+        let conn = run(&mut fake);
+        assert_eq!(state(&conn, "fix"), ("done".into(), 1, 0));
+        assert_eq!(
+            fake.resumes.lock().unwrap().as_slice(),
+            [None, None, None, Some("session-backend".into()), None]
+        );
+        let stored: (String, String) = conn
+            .query_row(
+                "SELECT session_cli,session_id FROM tasks WHERE id='plan-fix'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("fake-cli".into(), "session-backend".into()));
+    }
+
+    #[test]
+    fn review_rejection_resumes_persisted_session() {
+        let mut fake = Fake {
+            rejects: 1,
+            sessions: true,
+            ..Fake::default()
+        };
+        let conn = run(&mut fake);
+        assert_eq!(state(&conn, "reproduce"), ("done".into(), 0, 1));
+        assert_eq!(
+            fake.resumes.lock().unwrap().as_slice(),
+            [
+                None,
+                None,
+                Some("session-debugger".into()),
+                None,
+                None,
+                None
+            ]
+        );
+        let stored: (String, String) = conn
+            .query_row(
+                "SELECT session_cli,session_id FROM tasks WHERE id='plan-reproduce'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("fake-cli".into(), "session-debugger".into()));
+    }
+
+    #[test]
     fn four_check_failures_block_and_leave_dependents_pending() {
         let mut conn = connection("draft");
         let mut plan = prepare(&mut conn, "camp", "plan").unwrap();
@@ -1023,7 +1218,10 @@ mod tests {
             "aborted"
         );
         let events = fake.events.lock().unwrap();
-        let blocked = events.iter().find(|event| event.status == "blocked").unwrap();
+        let blocked = events
+            .iter()
+            .find(|event| event.status == "blocked")
+            .unwrap();
         assert_eq!(blocked.message.as_deref(), Some("需要 git push 权限"));
     }
 
@@ -1037,7 +1235,10 @@ mod tests {
         assert_eq!(state(&conn, "reproduce"), ("blocked".into(), 0, 0));
         assert_eq!(state(&conn, "fix").0, "pending");
         let events = fake.events.lock().unwrap();
-        let blocked = events.iter().find(|event| event.status == "blocked").unwrap();
+        let blocked = events
+            .iter()
+            .find(|event| event.status == "blocked")
+            .unwrap();
         assert_eq!(
             blocked.message.as_deref(),
             Some("无法访问任务声明的 files 范围")
@@ -1420,7 +1621,13 @@ mod tests {
     }
 
     impl Runner for ScopeRunner {
-        fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String> {
+        fn run(
+            &self,
+            role: &str,
+            prompt: &str,
+            cwd: &Path,
+            _: Option<&SessionRef>,
+        ) -> Result<RunOutput, String> {
             if role == "reviewer" {
                 return Ok(r#"{"verdict":"approve","reason":"ok"}"#.into());
             }
@@ -1512,7 +1719,13 @@ mod tests {
     }
 
     impl Runner for ParallelRunner {
-        fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String> {
+        fn run(
+            &self,
+            role: &str,
+            prompt: &str,
+            cwd: &Path,
+            _: Option<&SessionRef>,
+        ) -> Result<RunOutput, String> {
             if role == "reviewer" {
                 assert!(
                     self.state
@@ -1800,7 +2013,13 @@ mod tests {
     }
 
     impl Runner for ReworkRunner<'_> {
-        fn run(&self, role: &str, _: &str, cwd: &Path) -> Result<String, String> {
+        fn run(
+            &self,
+            role: &str,
+            _: &str,
+            cwd: &Path,
+            _: Option<&SessionRef>,
+        ) -> Result<RunOutput, String> {
             let mut attempts = self.attempts.lock().unwrap();
             if role == "reviewer" {
                 let verdict = if self.mode == "review" && *attempts == 1 {
@@ -1808,7 +2027,7 @@ mod tests {
                 } else {
                     "approve"
                 };
-                return Ok(format!(r#"{{"verdict":"{verdict}","reason":"review"}}"#));
+                return Ok(format!(r#"{{"verdict":"{verdict}","reason":"review"}}"#).into());
             }
             assert_eq!(
                 std::fs::read_to_string(self.root.join("base.txt")).unwrap(),

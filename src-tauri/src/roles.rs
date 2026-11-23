@@ -112,6 +112,7 @@ pub(crate) struct RunConfig {
     pub permissions: Permissions,
     pub artifact_name: &'static str,
     pub is_captain: bool,
+    pub is_reviewer: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -406,6 +407,7 @@ pub(crate) fn run_config(
         permissions: role.permissions,
         artifact_name,
         is_captain: role.role_type == "captain",
+        is_reviewer: role.role_type == "reviewer",
     })
 }
 
@@ -524,6 +526,9 @@ pub(crate) mod tests {
             .unwrap();
         connection
             .execute_batch(include_str!("../migrations/002_role_task_types.sql"))
+            .unwrap();
+        connection
+            .execute_batch(include_str!("../migrations/003_session_resume.sql"))
             .unwrap();
         connection
     }
