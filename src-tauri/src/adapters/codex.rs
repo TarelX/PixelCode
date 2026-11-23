@@ -48,11 +48,16 @@ fn command(options: &StartOptions<'_>) -> Command {
         .stderr(Stdio::piped())
         .args(["--ask-for-approval", "never", "exec"]);
     if let Some(session) = options.resume {
-        command.arg("resume").arg(session).args([
-            "--json",
-            "--ignore-user-config",
-            "--ignore-rules",
-        ]);
+        command
+            .arg("resume")
+            .arg(session)
+            .args([
+                "--json",
+                "--ignore-user-config",
+                "--ignore-rules",
+                "--config",
+            ])
+            .arg(format!("sandbox_mode={sandbox}"));
     } else {
         command.args([
             "--json",
@@ -297,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn resume_uses_exec_resume_without_sandbox_or_ephemeral() {
+    fn resume_pins_sandbox_mode_without_sandbox_or_ephemeral() {
         let permissions = Permissions {
             allow: vec!["Write".into(), "Edit".into()],
             deny: vec![],
@@ -322,6 +327,10 @@ mod tests {
         );
         assert!(!args.contains(&"--sandbox"));
         assert!(!args.contains(&"--ephemeral"));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--config", "sandbox_mode=workspace-write"])
+        );
 
         let fresh = command(&StartOptions {
             cwd: Path::new("camp"),

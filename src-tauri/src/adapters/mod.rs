@@ -417,7 +417,11 @@ mod tests {
         let result = claude_code::start(options, &slot, &|_| Ok(())).unwrap();
         assert_eq!(result.text, "Hello world");
 
-        let mut options = fake_options(&cwd, "continue", &permissions);
+        let write_permissions = crate::roles::Permissions {
+            allow: vec!["Write".into(), "Edit".into()],
+            deny: vec![],
+        };
+        let mut options = fake_options(&cwd, "continue", &write_permissions);
         options.resume = Some("thread-123");
         options.persist_session = true;
         let result = codex::start(options, &slot, &|_| Ok(())).unwrap();
@@ -434,6 +438,7 @@ mod tests {
             .find(|line| line.contains("exec resume thread-123"))
             .unwrap();
         assert!(codex_resume.contains("--json"));
+        assert!(codex_resume.contains("--config sandbox_mode=workspace-write"));
         assert!(!codex_resume.contains("--sandbox"));
         assert!(!codex_resume.contains("--ephemeral"));
 
