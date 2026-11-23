@@ -33,6 +33,8 @@ pub fn run() {
             supervisor::start_role_run,
             conversation::start_conversation,
             scheduler::approve_plan_execution,
+            scheduler::continue_plan_execution,
+            scheduler::list_worktree_diagnostics,
             settings::get_locale,
             settings::set_locale,
             artifacts::read_artifact,
@@ -45,7 +47,8 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             process_tree::reap_orphans(&data_dir);
-            let connection = db::open(&data_dir)?;
+            let mut connection = db::open(&data_dir)?;
+            scheduler::recover_interrupted(&mut connection)?;
             app.manage(artifacts::ArtifactRoot(data_dir.join("artifacts")));
             app.manage(Mutex::new(connection));
             app.manage(supervisor::RunSlot::default());
