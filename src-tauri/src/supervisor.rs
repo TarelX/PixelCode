@@ -207,6 +207,12 @@ pub(crate) enum RunUpdate {
     Text { text: String },
     Tool { name: String },
     Waiting,
+    UsageLimited { resets_at: Option<u64> },
+    TurnMetrics {
+        input_tokens: u64,
+        output_tokens: u64,
+        cache_tokens: Option<u64>,
+    },
     Completed,
     Blocked { message: String },
     Stopped,

@@ -1,0 +1,1 @@
+{"type":"result","subtype":"error","is_error":true,"result":"Usage limit reached","session_id":"usage-error","num_turns":1,"errors":["Usage limit reached"],"api_error_code":"credits_required"}

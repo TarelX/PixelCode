@@ -2,6 +2,7 @@ pub mod claude_code;
 pub mod codex;
 
 use serde::Serialize;
+use serde_json::Value;
 use std::{
     io,
     process::{Command, Output, Stdio},
@@ -11,18 +12,83 @@ use std::{
 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DetectStatus {
-    NotFound,
-    Found,
-    FoundNeedsLogin,
+pub enum VersionCompatibility {
+    Compatible,
+    Unverified,
+    Unknown,
 }
 
 #[derive(Debug, Serialize)]
 pub struct DetectResult {
     pub id: &'static str,
-    pub status: DetectStatus,
+    pub installed: bool,
+    pub signed_in: bool,
     pub version: Option<String>,
+    pub version_compatibility: VersionCompatibility,
     pub error: Option<String>,
+}
+
+pub(super) fn parse_version(raw: &str) -> Option<(u64, u64, u64)> {
+    let start = raw.find(|c: char| c.is_ascii_digit())?;
+    let end = raw[start..]
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .map_or(raw.len(), |index| start + index);
+    let parts: Vec<&str> = raw[start..end].split('.').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    Some((
+        parts[0].parse().ok()?,
+        parts[1].parse().ok()?,
+        parts[2].parse().ok()?,
+    ))
+}
+
+pub(super) fn json_u64(value: &Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().and_then(|value| u64::try_from(value).ok()))
+}
+
+pub(super) fn sum_u64(value: &Value, keys: &[&str]) -> Option<u64> {
+    let mut total: u64 = 0;
+    let mut found = false;
+    for key in keys {
+        if let Some(value) = value.get(*key).and_then(json_u64) {
+            total = total.saturating_add(value);
+            found = true;
+        }
+    }
+    found.then_some(total)
+}
+
+pub(super) fn epoch_seconds(value: u64) -> u64 {
+    if value >= 100_000_000_000 {
+        value / 1000
+    } else {
+        value
+    }
+}
+
+pub(super) fn limit_signal(text: &str) -> bool {
+    let text = text.to_lowercase();
+    [
+        "rate limit",
+        "rate_limit",
+        "ratelimit",
+        "usage limit",
+        "usage_limit",
+        "quota",
+        "too many requests",
+        "429",
+        "credits_required",
+        "out_of_credits",
+        "usage credits",
+        "token budget",
+        "session limit",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
 }
 
 #[derive(Debug, PartialEq)]
@@ -76,12 +142,15 @@ pub(super) fn detect_with(
     binary: &str,
     auth_args: &[&str],
     parse: fn(&Output) -> Result<bool, String>,
+    compatible: fn(&str) -> VersionCompatibility,
     mut run: impl FnMut(&str, &[&str]) -> io::Result<Output>,
 ) -> DetectResult {
     let mut result = DetectResult {
         id,
-        status: DetectStatus::FoundNeedsLogin,
+        installed: false,
+        signed_in: false,
         version: None,
+        version_compatibility: VersionCompatibility::Unknown,
         error: None,
     };
     let version = match run(binary, &["--version"]) {
@@ -89,30 +158,43 @@ pub(super) fn detect_with(
             if output.status.success()
                 && !String::from_utf8_lossy(&output.stdout).trim().is_empty() =>
         {
-            output
+            result.installed = true;
+            Some(output)
         }
         Ok(_) => {
+            result.installed = true;
             result.error = Some(format!(
                 "无法检测 {binary} 版本：--version 返回失败或空输出"
             ));
-            return result;
+            None
         }
         Err(error) => {
-            if error.kind() == io::ErrorKind::NotFound {
-                result.status = DetectStatus::NotFound;
+            if error.kind() != io::ErrorKind::NotFound {
+                result.installed = true;
             }
             result.error = Some(format!("无法启动 {binary}：{error}"));
-            return result;
+            if !result.installed {
+                return result;
+            }
+            None
         }
     };
-    result.version = Some(String::from_utf8_lossy(&version.stdout).trim().to_owned());
+    if let Some(output) = version {
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        result.version_compatibility = compatible(&raw);
+        result.version = Some(raw);
+    }
     match run(binary, auth_args)
         .map_err(|error| format!("无法检查 {binary} 登录状态：{error}"))
         .and_then(|output| parse(&output))
     {
-        Ok(true) => result.status = DetectStatus::Found,
+        Ok(true) => result.signed_in = true,
         Ok(false) => {}
-        Err(error) => result.error = Some(error),
+        Err(error) => {
+            if result.error.is_none() {
+                result.error = Some(error);
+            }
+        }
     }
     result
 }
@@ -158,12 +240,13 @@ mod tests {
         binary: &str,
         args: &[&str],
         parse: fn(&Output) -> Result<bool, String>,
+        compatible: fn(&str) -> VersionCompatibility,
         fixtures: &str,
     ) {
         let cases: serde_json::Value = serde_json::from_str(fixtures).unwrap();
         for case in cases.as_array().unwrap() {
             let mut calls = 0;
-            let result = detect_with(id, binary, args, parse, |command, actual_args| {
+            let result = detect_with(id, binary, args, parse, compatible, |command, actual_args| {
                 assert_eq!(command, binary);
                 calls += 1;
                 if calls == 1 {
@@ -179,34 +262,46 @@ mod tests {
                 }
             });
             assert_eq!(calls, 2);
-            assert_eq!(result.version.as_deref(), Some("1.2.3"));
+            assert!(result.installed);
             assert_eq!(
-                serde_json::to_value(&result.status).unwrap(),
-                case["status"]
+                result.signed_in,
+                case["status"].as_str().unwrap() == "found"
             );
+            assert_eq!(result.version_compatibility, VersionCompatibility::Unverified);
             assert_eq!(result.error.is_some(), case["error"].as_bool().unwrap());
         }
     }
 
     #[test]
-    fn empty_or_failed_version_and_failed_auth() {
+    fn version_failure_still_checks_auth() {
         for version in [output(true, "", ""), output(false, "", "failed")] {
             let mut version = Some(version);
             let result = detect_with(
                 "codex",
                 "codex",
-                &[],
+                &["login", "status"],
                 |_| Ok(true),
-                |_, _| Ok(version.take().unwrap()),
+                |_| VersionCompatibility::Unknown,
+                |_, args| {
+                    if args == ["--version"] {
+                        Ok(version.take().unwrap())
+                    } else {
+                        Ok(output(true, "", ""))
+                    }
+                },
             );
+            assert!(result.installed);
+            assert!(result.signed_in);
             assert!(result.error.is_some());
-            assert_eq!(result.status, DetectStatus::FoundNeedsLogin);
+            assert!(result.version.is_none());
+            assert_eq!(result.version_compatibility, VersionCompatibility::Unknown);
         }
         let result = detect_with(
             "codex",
             "codex",
             &["login", "status"],
             |_| Ok(true),
+            |_| VersionCompatibility::Unknown,
             |_, args| {
                 if args == ["--version"] {
                     Ok(output(true, "1.2.3", ""))
@@ -215,25 +310,44 @@ mod tests {
                 }
             },
         );
+        assert!(result.installed);
+        assert!(!result.signed_in);
         assert!(result.error.is_some());
-        assert_eq!(result.status, DetectStatus::FoundNeedsLogin);
     }
 
     #[test]
     fn missing_and_unlaunchable_binaries() {
-        for (kind, expected) in [
-            (io::ErrorKind::NotFound, DetectStatus::NotFound),
-            (
-                io::ErrorKind::PermissionDenied,
-                DetectStatus::FoundNeedsLogin,
-            ),
-            (io::ErrorKind::TimedOut, DetectStatus::FoundNeedsLogin),
+        for (kind, installed) in [
+            (io::ErrorKind::NotFound, false),
+            (io::ErrorKind::PermissionDenied, true),
+            (io::ErrorKind::TimedOut, true),
         ] {
-            let result = detect_with("codex", "codex", &[], |_| Ok(true), |_, _| Err(kind.into()));
-            assert_eq!(result.status, expected);
+            let result = detect_with(
+                "codex",
+                "codex",
+                &[],
+                |_| Ok(true),
+                |_| VersionCompatibility::Unknown,
+                |_, _| Err(kind.into()),
+            );
+            assert_eq!(result.installed, installed);
+            assert!(!result.signed_in);
             assert!(result.error.is_some());
             assert!(result.version.is_none());
+            assert_eq!(result.version_compatibility, VersionCompatibility::Unknown);
         }
+    }
+
+    #[test]
+    fn version_usage_and_limit_helpers() {
+        assert_eq!(parse_version("2.1.330 (Claude Code)"), Some((2, 1, 330)));
+        assert_eq!(parse_version("codex-cli 0.171.0"), Some((0, 171, 0)));
+        assert_eq!(parse_version("not a version"), None);
+        assert_eq!(epoch_seconds(1_700_000_000_000), 1_700_000_000);
+        assert_eq!(epoch_seconds(1_700_000_000), 1_700_000_000);
+        assert!(limit_signal("429 Too Many Requests"));
+        assert!(limit_signal("shared rollout token budget exhausted"));
+        assert!(!limit_signal("Done."));
     }
 
     struct EnvGuard {

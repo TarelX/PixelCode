@@ -1,4 +1,7 @@
-use super::{DetectResult, RunOutput, detect_with, run};
+use super::{
+    DetectResult, RunOutput, VersionCompatibility, detect_with, epoch_seconds, json_u64,
+    limit_signal, parse_version, run, sum_u64,
+};
 use crate::{roles::Permissions, supervisor::RunUpdate};
 use serde_json::Value;
 use std::{
@@ -19,12 +22,24 @@ fn logged_in(output: &Output) -> Result<bool, String> {
     }
 }
 
+fn compatible(version: &str) -> VersionCompatibility {
+    let Some(version) = parse_version(version) else {
+        return VersionCompatibility::Unknown;
+    };
+    if ((2, 1, 259)..(2, 1, 331)).contains(&version) {
+        VersionCompatibility::Compatible
+    } else {
+        VersionCompatibility::Unverified
+    }
+}
+
 pub fn detect() -> DetectResult {
     detect_with(
         "claude-code",
         "claude",
         &["auth", "status", "--json"],
         logged_in,
+        compatible,
         run,
     )
 }
@@ -105,6 +120,13 @@ fn command(options: &StartOptions<'_>) -> Result<Command, String> {
     Ok(command)
 }
 
+fn usage_metrics(usage: &Value) -> Option<(u64, u64, Option<u64>)> {
+    let input = json_u64(&usage["input_tokens"])?;
+    let output = json_u64(&usage["output_tokens"])?;
+    let cache = sum_u64(usage, &["cache_read_input_tokens", "cache_creation_input_tokens"]);
+    Some((input, output, cache))
+}
+
 fn stream(
     input: impl BufRead,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
@@ -155,6 +177,22 @@ fn stream(
                     partials.entry(index).or_default().push_str(text);
                 }
             }
+            Some("rate_limit_event") => {
+                let info = &message["rate_limit_info"];
+                let rejected = matches!(info["status"].as_str(), Some("rejected"))
+                    || matches!(info["overageStatus"].as_str(), Some("rejected"));
+                if rejected {
+                    let resets_at = json_u64(&info["resetsAt"])
+                        .or_else(|| {
+                            info["rateLimitType"]
+                                .as_str()
+                                .and_then(|kind| json_u64(&info["unifiedWindows"][kind]["resetsAt"]))
+                        })
+                        .or_else(|| json_u64(&info["overageResetsAt"]))
+                        .map(epoch_seconds);
+                    emit(RunUpdate::UsageLimited { resets_at })?;
+                }
+            }
             Some("assistant") => {
                 if let Some(blocks) = message["message"]["content"].as_array() {
                     for (index, block) in blocks.iter().enumerate() {
@@ -181,6 +219,13 @@ fn stream(
                 message_index += 1;
             }
             Some("result") => {
+                if let Some((input, output, cache)) = usage_metrics(&message["usage"]) {
+                    emit(RunUpdate::TurnMetrics {
+                        input_tokens: input,
+                        output_tokens: output,
+                        cache_tokens: cache,
+                    })?;
+                }
                 result = Some(message);
             }
             _ => {}
@@ -205,6 +250,14 @@ fn stream(
         .or(Some(text).filter(|text| !text.is_empty()))
         .or_else(|| result["subtype"].as_str())
         .unwrap_or("未知错误");
+    if limit_signal(reason)
+        || limit_signal(result["api_error"].as_str().unwrap_or_default())
+        || result["api_error_code"]
+            .as_str()
+            .is_some_and(limit_signal)
+    {
+        emit(RunUpdate::UsageLimited { resets_at: None })?;
+    }
     Ok(Some(Err(format!("Claude Code 运行失败：{reason}"))))
 }
 
@@ -274,6 +327,7 @@ mod tests {
             "claude",
             &["auth", "status", "--json"],
             super::logged_in,
+            super::compatible,
             include_str!("../../../tests/adapters/fixtures/claude-detect.json"),
         );
     }
@@ -304,6 +358,52 @@ mod tests {
                 {"type": "tool", "name": "Read"},
                 {"type": "text", "text": "\nThe file is empty."}
             ])
+        );
+    }
+
+    #[test]
+    fn usage_limit_and_metrics_from_stream_json() {
+        let updates = RefCell::new(Vec::new());
+        let outcome = stream(
+            include_bytes!("../../../tests/adapters/fixtures/claude-usage.jsonl").as_slice(),
+            &|update| {
+                updates.borrow_mut().push(update);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            outcome,
+            Some(Ok(RunOutput {
+                text: "Done.".into(),
+                session_id: Some("usage-fixture".into()),
+            }))
+        );
+        assert_eq!(
+            serde_json::to_value(updates.into_inner()).unwrap(),
+            serde_json::json!([
+                {"type":"usage_limited","resets_at":1700000060},
+                {"type":"text","text":"Done."},
+                {"type":"turn_metrics","input_tokens":12,"output_tokens":4,"cache_tokens":5}
+            ])
+        );
+
+        let updates = RefCell::new(Vec::new());
+        let outcome = stream(
+            include_bytes!("../../../tests/adapters/fixtures/claude-usage-error.jsonl").as_slice(),
+            &|update| {
+                updates.borrow_mut().push(update);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            outcome,
+            Some(Err("Claude Code 运行失败：Usage limit reached".into()))
+        );
+        assert_eq!(
+            serde_json::to_value(updates.into_inner()).unwrap(),
+            serde_json::json!([{"type":"usage_limited","resets_at":null}])
         );
     }
 

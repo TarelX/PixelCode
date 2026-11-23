@@ -64,6 +64,18 @@ test("stream accumulation, tool, completion, dismissal, and stale or other-camp 
   assert.deepEqual(run.state().runs, {});
 });
 
+test("usage limit and turn metrics update the run without changing its state", async () => {
+  const run = await store();
+  run.event("started");
+  run.event("usage_limited", { resets_at: 1700000060 });
+  run.event("turn_metrics", { input_tokens: 12, output_tokens: 4, cache_tokens: 5 });
+  assert.equal(run.state().runs.role.status, "running");
+  assert.deepEqual(run.state().runs.role.usage_limited, { resets_at: 1700000060 });
+  assert.deepEqual(run.state().runs.role.turn_metrics, { input_tokens: 12, output_tokens: 4, cache_tokens: 5 });
+  run.event("turn_metrics", { input_tokens: 13, output_tokens: 4 });
+  assert.deepEqual(run.state().runs.role.turn_metrics, { input_tokens: 13, output_tokens: 4, cache_tokens: null });
+});
+
 test("failed and stopped states, bounded text, and command errors", async () => {
   const run = await store();
   run.event("started");
