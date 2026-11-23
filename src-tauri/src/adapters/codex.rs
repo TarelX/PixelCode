@@ -1,5 +1,8 @@
 use super::claude_code::StartOptions;
-use super::{DetectResult, RunOutput, detect_with, run};
+use super::{
+    DetectResult, RunOutput, VersionCompatibility, detect_with, epoch_seconds, json_u64,
+    limit_signal, parse_version, run, sum_u64,
+};
 use crate::supervisor::RunUpdate;
 use serde_json::Value;
 use std::{
@@ -22,8 +25,26 @@ fn logged_in(output: &Output) -> Result<bool, String> {
     }
 }
 
+fn compatible(version: &str) -> VersionCompatibility {
+    let Some(version) = parse_version(version) else {
+        return VersionCompatibility::Unknown;
+    };
+    if ((0, 171, 0)..(0, 172, 0)).contains(&version) {
+        VersionCompatibility::Compatible
+    } else {
+        VersionCompatibility::Unverified
+    }
+}
+
 pub fn detect() -> DetectResult {
-    detect_with("codex", "codex", &["login", "status"], logged_in, run)
+    detect_with(
+        "codex",
+        "codex",
+        &["login", "status"],
+        logged_in,
+        compatible,
+        run,
+    )
 }
 
 fn command(options: &StartOptions<'_>) -> Command {
@@ -93,6 +114,23 @@ fn command(options: &StartOptions<'_>) -> Command {
     command
 }
 
+fn usage_metrics(usage: &Value) -> Option<(u64, u64, Option<u64>)> {
+    let input = json_u64(&usage["input_tokens"])?;
+    let output = json_u64(&usage["output_tokens"])?;
+    let cache = sum_u64(usage, &["cached_input_tokens", "cache_write_input_tokens"]);
+    Some((input, output, cache))
+}
+
+fn reset_at(message: &Value) -> Option<u64> {
+    ["resets_at", "reset_at"]
+        .iter()
+        .find_map(|key| {
+            json_u64(&message[*key])
+                .or_else(|| json_u64(&message["error"][*key]))
+                .map(epoch_seconds)
+        })
+}
+
 fn stream(
     input: impl BufRead,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
@@ -157,17 +195,31 @@ fn stream(
                     _ => {}
                 }
             }
-            Some("turn.completed") if result.is_none() => {
-                result = Some(Ok(RunOutput {
-                    text: std::mem::take(&mut final_text),
-                    session_id: session_id.take(),
-                }));
+            Some("turn.completed") => {
+                if result.is_none() {
+                    if let Some((input, output, cache)) = usage_metrics(&message["usage"]) {
+                        emit(RunUpdate::TurnMetrics {
+                            input_tokens: input,
+                            output_tokens: output,
+                            cache_tokens: cache,
+                        })?;
+                    }
+                    result = Some(Ok(RunOutput {
+                        text: std::mem::take(&mut final_text),
+                        session_id: session_id.take(),
+                    }));
+                }
             }
             Some("turn.failed" | "error") => {
                 let reason = message["error"]["message"]
                     .as_str()
                     .or_else(|| message["message"].as_str())
                     .unwrap_or("未知错误");
+                if limit_signal(reason) {
+                    emit(RunUpdate::UsageLimited {
+                        resets_at: reset_at(&message),
+                    })?;
+                }
                 result = Some(Err(format!("Codex 运行失败：{reason}")));
             }
             _ => {}
@@ -257,7 +309,8 @@ mod tests {
                 {"type":"tool", "name":"file_change"},
                 {"type":"tool", "name":"docs::search"},
                 {"type":"tool", "name":"web_search"},
-                {"type":"text", "text":"\nDone."}
+                {"type":"text", "text":"\nDone."},
+                {"type":"turn_metrics", "input_tokens":10, "output_tokens":5, "cache_tokens":0}
             ])
         );
         assert_eq!(
@@ -268,6 +321,44 @@ mod tests {
             )
             .unwrap(),
             Some(Err("Codex 运行失败：Not logged in".into()))
+        );
+    }
+
+    #[test]
+    fn usage_metrics_and_limit_from_fixtures() {
+        let updates = RefCell::new(Vec::new());
+        let outcome = stream(
+            include_bytes!("../../../tests/adapters/fixtures/codex-usage.jsonl").as_slice(),
+            &|update| {
+                updates.borrow_mut().push(update);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(outcome, Some(Ok(RunOutput::from(""))));
+        assert_eq!(
+            serde_json::to_value(updates.into_inner()).unwrap(),
+            serde_json::json!([
+                {"type":"turn_metrics","input_tokens":10,"output_tokens":5,"cache_tokens":5}
+            ])
+        );
+
+        let updates = RefCell::new(Vec::new());
+        let outcome = stream(
+            include_bytes!("../../../tests/adapters/fixtures/codex-usage-limit.jsonl").as_slice(),
+            &|update| {
+                updates.borrow_mut().push(update);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            outcome,
+            Some(Err("Codex 运行失败：Usage limit reached".into()))
+        );
+        assert_eq!(
+            serde_json::to_value(updates.into_inner()).unwrap(),
+            serde_json::json!([{"type":"usage_limited","resets_at":1700000060}])
         );
     }
 
@@ -466,6 +557,7 @@ mod tests {
             "codex",
             &["login", "status"],
             super::logged_in,
+            super::compatible,
             include_str!("../../../tests/adapters/fixtures/codex-detect.json"),
         );
     }

@@ -83,7 +83,9 @@
     "login": "Run {command} in your terminal, then try again.", "install": "View setup guide ↗", "missing": "The {command} command was not found.",
     "notInstalled": "No CLIs found. You can still open a base. To run tasks, install a CLI and sign in: ",
     "claudeDocs": "Claude Code setup guide", "codexDocs": "Codex setup guide",
-    "statuses": { "not_found": "Not found", "found": "Found", "found_needs_login": "Sign-in required" }
+    "unverifiedHint": "This CLI version is outside PixelCode's verified argument set. Confirm compatibility before running tasks.",
+    "checks": { "install": "Installed", "login": "Sign-in", "version": "Version", "found": "Found", "missing": "Not found", "signedIn": "Signed in", "signInRequired": "Sign-in required", "compatible": "Compatible", "unverified": "Unverified", "unknown": "Could not verify" },
+    "statuses": { "not_found": "Not found", "found": "Found", "found_needs_login": "Sign-in required", "unverified": "Unverified version", "unknown": "Could not verify" }
   },
   "report": {
     "title": "Daily Adventure Report", "export": "Export Adventure Report", "busy": "Rendering…",
@@ -126,6 +128,9 @@
   "taskDismiss": "Dismiss output",
   "taskWaiting": "Waiting for output…",
   "taskTool": "Tool",
+  "usageLimited": "Usage limit reached · resets {time}",
+  "usageLimitedNoReset": "Usage limit reached · waiting for reset",
+  "tokenUsage": "tokens in {input} · out {output} · cache {cache}",
   "runStates": { "running": "Running", "waiting": "Awaiting clarification", "completed": "Done", "failed": "! Task failed", "blocked": "Blocked", "stopped": "Stopped" },
   "planTitle": "Draft a plan",
   "planPrompt": "Request",
