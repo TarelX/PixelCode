@@ -1,0 +1,4 @@
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"five_hour","resetsAt":1700000060000,"unifiedWindows":{"five_hour":{"resetsAt":1700000060000}}}}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","resetsAt":1700000060000,"unifiedWindows":{"five_hour":{"resetsAt":1700000060000}}}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Done."}]},"parent_tool_use_id":null}
+{"type":"result","subtype":"success","is_error":false,"result":"Done.","session_id":"usage-fixture","num_turns":1,"usage":{"input_tokens":12,"output_tokens":4,"cache_read_input_tokens":2,"cache_creation_input_tokens":3}}

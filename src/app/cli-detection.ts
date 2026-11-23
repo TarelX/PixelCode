@@ -2,10 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect } from "react";
 import { create } from "zustand";
 
+export type VersionCompatibility = "compatible" | "unverified" | "unknown";
+
 export interface DetectResult {
   id: "claude-code" | "codex";
-  status: "not_found" | "found" | "found_needs_login";
+  installed: boolean;
+  signed_in: boolean;
   version: string | null;
+  version_compatibility: VersionCompatibility;
   error: string | null;
 }
 

@@ -31,7 +31,7 @@ test("CLI detection refreshes once at a time and reports command errors", async 
   assert.equal(useCliDetection().loading, true);
   await useCliDetection().refresh();
   assert.equal(api.calls.length, 1);
-  const results = [{ id: "claude-code", status: "found", version: "2.1.330", error: null }];
+  const results = [{ id: "claude-code", installed: true, signed_in: true, version: "2.1.330", version_compatibility: "compatible", error: null }];
   reply.resolve(results);
   await reply.promise;
   await new Promise((done) => setImmediate(done));

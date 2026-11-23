@@ -16,6 +16,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px
 .status-dot { display: inline-block; width: 5px; height: 5px; background: var(--ui-success); flex-shrink: 0; }
 .status-dot--not_found { background: var(--ui-muted); }
 .status-dot--found_needs_login { background: var(--ui-warning); }
+.status-dot--unknown { background: var(--ui-muted); }
 .status-dot--error { background: var(--ui-error); }
 [role="alert"] { color: var(--ui-error); overflow-wrap: anywhere; }
 [role="status"] { color: var(--ui-warning); }

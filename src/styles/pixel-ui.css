@@ -89,6 +89,9 @@
 .cli-tool__heading strong { font-size: 13px; font-weight: 500; }
 .cli-tool__state { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--ui-muted); }
 .cli-tool__version { display: block; margin: 10px 0 0 26px; font-size: 10px; color: var(--ui-muted); }
+.cli-checks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.cli-checks li { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 10px; color: var(--ui-muted); }
+.cli-checks strong { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 500; color: var(--text-light); }
 .cli-tool p, .cli-tool a, .cli-status > p:not(.cli-status__intro) { font-size: 11px; }
 .cli-tool a { display: inline-block; margin-top: 10px; }
 @media (min-width: 1400px) and (min-height: 800px) { .title-screen { padding-top: 72px; } .welcome-hero { min-height: 360px; } .recent-projects { margin-top: 48px; } }

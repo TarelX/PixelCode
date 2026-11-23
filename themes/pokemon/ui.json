@@ -86,7 +86,9 @@
     "login": "请在终端运行 {command} 后重试。", "install": "查看安装文档 ↗", "missing": "未找到 {command} 命令。",
     "notInstalled": "未找到任何 CLI，仍可打开基地。请先安装并登录：",
     "claudeDocs": "Claude Code 安装文档", "codexDocs": "Codex 安装文档",
-    "statuses": { "not_found": "未找到", "found": "已找到", "found_needs_login": "已找到但未登录" }
+    "unverifiedHint": "当前 CLI 版本不在 PixelCode 已验证的参数集内，请确认兼容后再运行任务。",
+    "checks": { "install": "安装", "login": "登录", "version": "版本", "found": "已找到", "missing": "未找到", "signedIn": "已登录", "signInRequired": "未登录", "compatible": "兼容", "unverified": "未验证", "unknown": "无法确认" },
+    "statuses": { "not_found": "未找到", "found": "已找到", "found_needs_login": "已找到但未登录", "unverified": "版本未验证", "unknown": "无法确认" }
   },
   "report": {
     "title": "今日冒险报告", "export": "导出冒险报告", "busy": "正在绘制…",
@@ -129,6 +131,9 @@
   "taskDismiss": "收起输出",
   "taskWaiting": "等待输出…",
   "taskTool": "工具",
+  "usageLimited": "用量已达上限 · 重置于 {time}",
+  "usageLimitedNoReset": "用量已达上限，等待重置",
+  "tokenUsage": "tokens 入 {input} · 出 {output} · 缓存 {cache}",
   "runStates": { "running": "执行中", "waiting": "等待澄清", "completed": "已完成", "failed": "! 执行失败", "blocked": "受阻", "stopped": "已停止" },
   "planTitle": "拟定方案",
   "planPrompt": "任务需求",

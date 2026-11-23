@@ -12,6 +12,8 @@ export interface RoleRun {
   text: string;
   tool: string;
   error: string;
+  usage_limited?: { resets_at: number | null };
+  turn_metrics?: { input_tokens: number; output_tokens: number; cache_tokens: number | null };
 }
 interface RunEvent {
   run_id: string;
@@ -19,10 +21,14 @@ interface RunEvent {
   artifact?: Artifact;
   camp_id: string;
   role_id: string;
-  type: "started" | "text" | "tool" | "waiting" | "completed" | "failed" | "blocked" | "stopped";
+  type: "started" | "text" | "tool" | "waiting" | "usage_limited" | "turn_metrics" | "completed" | "failed" | "blocked" | "stopped";
   text?: string;
   name?: string;
   message?: string;
+  resets_at?: number | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_tokens?: number | null;
 }
 export interface Clarification {
   questions: string[];
@@ -62,6 +68,10 @@ export const useRuns = create<{
       : { ...previous };
     if (event.type === "text") run.text = (run.text + (event.text ?? "")).slice(-32000);
     if (event.type === "tool") run.tool = event.name ?? "";
+    if (event.type === "usage_limited") run.usage_limited = { resets_at: event.resets_at ?? null };
+    if (event.type === "turn_metrics" && typeof event.input_tokens === "number" && typeof event.output_tokens === "number") {
+      run.turn_metrics = { input_tokens: event.input_tokens, output_tokens: event.output_tokens, cache_tokens: event.cache_tokens ?? null };
+    }
     if (event.type === "completed" || event.type === "failed" || event.type === "blocked" || event.type === "stopped" || event.type === "waiting") {
       run.status = event.type;
       run.error = event.message ?? "";

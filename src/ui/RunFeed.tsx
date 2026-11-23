@@ -6,6 +6,7 @@ import { readArtifact } from "../orchestrator/artifact-manager";
 import { PixelDialog } from "./PixelDialog";
 import { RoleAvatar } from "./components/RoleAvatar";
 import { PixelIcon } from "./components/PixelIcon";
+import { usageLimitText, tokenUsageText } from "./run-usage";
 
 export function RunFeed({ onPlan }: { onPlan: () => void }) {
   const { locale, theme } = useI18n();
@@ -34,6 +35,8 @@ export function RunFeed({ onPlan }: { onPlan: () => void }) {
       {entries.length === 0 && <div className="activity-empty"><PixelIcon name="chat" /><div><strong>{theme.studio.emptyTitle}</strong><p>{theme.studio.emptyHint}</p></div></div>}
       {entries.map(([id, run]) => {
         const role = roles.find((item) => item.id === id);
+        const limit = usageLimitText(run, theme, locale);
+        const metrics = tokenUsageText(run, theme);
         return <article className={`feed-message feed-message--${run.status}`} key={`${id}-${run.run_id}`}>
           <RoleAvatar avatar={role?.avatar ?? null} scale={1} /><div className="feed-message__body">
             <div className="feed-message__heading"><strong>{role ? roleName(role, locale) : id}</strong><span className={`run-label run-label--${run.status}`}>{theme.runStates[run.status]}</span>
@@ -41,6 +44,8 @@ export function RunFeed({ onPlan }: { onPlan: () => void }) {
             </div>
             <pre>{run.text || theme.taskWaiting}</pre>
             {run.tool && <small><PixelIcon name="terminal" />{theme.taskTool}: {run.tool}</small>}
+            {limit && <small role="status">{limit}</small>}
+            {metrics && <small className="run-metrics">{metrics}</small>}
             {run.error && <p role="alert">{run.error}</p>}
             {run.artifact && <button className="feed-artifact" disabled={loading} title={run.artifact.absolute_path} onClick={() => run.artifact!.type === "plan" ? onPlan() : void view(run.artifact!.id, run.artifact!.absolute_path)}><PixelIcon name="folder" />{run.artifact.file_path.split(/[/\\]/).pop()}<PixelIcon name="arrow" /></button>}
           </div>
