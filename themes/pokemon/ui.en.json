@@ -97,7 +97,7 @@
     "loading": "Loading task cards…", "loadError": "Unable to open the task wall: ", "invalid": "The task dependencies are invalid, so the wall cannot be displayed.",
     "recruited": "Recruited partners",
     "scenarios": { "bug-fix": "Bug fix", "new-project": "New project", "refactor": "Refactor", "research": "Research", "custom": "Custom" },
-    "description": "Task description", "role": "Assigned partner", "dependencies": "Prerequisite tasks", "inputs": "Input artifacts", "outputs": "Output artifacts",
+    "description": "Task description", "role": "Assigned partner", "dependencies": "Prerequisite tasks", "inputs": "Input artifacts", "outputs": "Output artifacts", "files": "Write scope",
     "acceptance": "Acceptance criteria", "check": "Check command · Read only", "program": "Program", "args": "Argument array", "none": "None",
     "statuses": { "pending": "Pending", "running": "Running", "checking": "Checking", "reviewing": "In review", "done": "Done", "blocked": "Blocked", "failed": "Failed" },
     "planStatuses": { "draft": "Draft · Not started", "approved": "Approved", "executing": "Running", "awaiting_delivery": "Awaiting delivery", "completed": "Delivered", "aborted": "Aborted" },

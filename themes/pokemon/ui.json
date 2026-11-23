@@ -97,7 +97,7 @@
     "loading": "正在读取计划卡…", "loadError": "无法打开计划卡墙：", "invalid": "计划卡依赖无效，无法绘制。",
     "recruited": "本次招募",
     "scenarios": { "bug-fix": "修 bug", "new-project": "新项目", "refactor": "重构", "research": "调研", "custom": "自定义" },
-    "description": "任务描述", "role": "领命伙伴", "dependencies": "前置计划卡", "inputs": "输入产物", "outputs": "输出产物",
+    "description": "任务描述", "role": "领命伙伴", "dependencies": "前置计划卡", "inputs": "输入产物", "outputs": "输出产物", "files": "写入范围",
     "acceptance": "验收标准", "check": "检查命令 · 仅展示", "program": "程序", "args": "参数数组", "none": "无",
     "statuses": { "pending": "待命", "running": "执行中", "checking": "检查中", "reviewing": "审查中", "done": "已完成", "blocked": "受阻", "failed": "失败" },
     "planStatuses": { "draft": "草案 · 未执行", "approved": "已确认", "executing": "执行中", "awaiting_delivery": "待交付确认", "completed": "已交付", "aborted": "已中止" },

@@ -121,6 +121,26 @@ fn order(plan: &Plan) -> Result<Vec<usize>, String> {
     Ok(result)
 }
 
+fn paths_overlap(left: &str, right: &str) -> bool {
+    let mut left = left.split('/');
+    let mut right = right.split('/');
+    loop {
+        match (left.next(), right.next()) {
+            (Some(a), Some(b)) if a == b => (),
+            (Some(_), Some(_)) => return false,
+            _ => return true,
+        }
+    }
+}
+
+fn scopes_overlap(left: &[String], right: &[String]) -> bool {
+    !left.is_empty()
+        && !right.is_empty()
+        && left
+            .iter()
+            .any(|a| right.iter().any(|b| paths_overlap(a, b)))
+}
+
 fn status(
     conn: &Connection,
     runner: &impl Runner,
@@ -247,6 +267,7 @@ impl<R: Runner> Execution<'_, R> {
             let mut started = HashSet::new();
             let mut completed = HashSet::new();
             let mut active = 0;
+            let mut active_tasks: HashSet<usize> = HashSet::new();
             let mut first_error = None;
             loop {
                 for &index in &sequence {
@@ -256,10 +277,14 @@ impl<R: Runner> Execution<'_, R> {
                     let task = &self.plan.tasks[index];
                     if started.contains(&index)
                         || !task.depends_on.iter().all(|dep| completed.contains(dep))
+                        || active_tasks.iter().any(|&active_index| {
+                            scopes_overlap(&task.files, &self.plan.tasks[active_index].files)
+                        })
                     {
                         continue;
                     }
                     started.insert(index);
+                    active_tasks.insert(index);
                     active += 1;
                     let send = send.clone();
                     let git = git.as_ref();
@@ -277,6 +302,7 @@ impl<R: Runner> Execution<'_, R> {
                 }
                 let (index, result) = receive.recv().map_err(|e| e.to_string())?;
                 active -= 1;
+                active_tasks.remove(&index);
                 match result {
                     Ok(true) => {
                         completed.insert(self.plan.tasks[index].id.clone());
@@ -1067,6 +1093,32 @@ mod tests {
     }
 
     #[test]
+    fn approval_rejects_invalid_file_scopes_before_dispatch() {
+        let mut conn = connection("draft");
+        let json: String = conn
+            .query_row("SELECT plan_json FROM plans", [], |row| row.get(0))
+            .unwrap();
+        let mut plan: Plan = serde_json::from_str(&json).unwrap();
+        plan.tasks[0].files = vec!["../escape.txt".into()];
+        conn.execute(
+            "UPDATE plans SET plan_json=?1",
+            [serde_json::to_string(&plan).unwrap()],
+        )
+        .unwrap();
+        let error = prepare(&mut conn, "camp", "plan").err().unwrap();
+        assert!(error.contains("写入范围"));
+        assert_eq!(
+            plans::latest(&conn, "camp").unwrap().unwrap().status,
+            "draft"
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM tasks", [], |r| { r.get::<_, u32>(0) })
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn reviewer_tasks_skip_review_and_empty_outputs_use_fallback() {
         let mut conn = connection("draft");
         let mut plan = prepare(&mut conn, "camp", "plan").unwrap();
@@ -1194,8 +1246,194 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_file_scopes_serialize_while_disjoint_scopes_parallelize() {
+        use crate::git::tests::{cleanup, directory, repo};
+        let root = directory("scope-root");
+        let data = directory("scope-data");
+        repo(&root);
+        let mut conn = connection("draft");
+        let mut plan: Plan =
+            serde_json::from_str(include_str!("../../tests/scheduler/captain-plan.json")).unwrap();
+        let template = serde_json::to_string(&plan.tasks[0]).unwrap();
+        plan.tasks.clear();
+        for (index, files) in [
+            vec!["src".to_string()],
+            vec!["src/app.ts".to_string()],
+            vec!["docs/guide.md".to_string()],
+            vec!["tests/app.test.ts".to_string()],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut task: plans::Task = serde_json::from_str(&template).unwrap();
+            task.id = format!("t{index}");
+            task.title = format!("T{index}");
+            task.role_id = "debugger".into();
+            task.depends_on = vec![];
+            task.input_artifacts.clear();
+            task.output_artifacts = vec!["output.md".into()];
+            task.check_command = None;
+            task.files = files;
+            plan.tasks.push(task);
+        }
+        conn.execute(
+            "UPDATE plans SET plan_json=?1",
+            [serde_json::to_string(&plan).unwrap()],
+        )
+        .unwrap();
+        let plan = prepare(&mut conn, "camp", "plan").unwrap();
+        let conn = Mutex::new(conn);
+        let runner = ScopeRunner {
+            state: Mutex::default(),
+            changed: std::sync::Condvar::new(),
+            width: 3,
+            root: root.clone(),
+        };
+        Execution {
+            conn: &conn,
+            root: &data.join("artifacts"),
+            cwd: &root,
+            worktrees: &data.join("worktrees"),
+            camp: "camp",
+            id: "plan",
+            plan: &plan,
+            runner: &runner,
+        }
+        .execute()
+        .unwrap();
+        let conn = conn.into_inner().unwrap();
+        let recorded = runner.state.lock().unwrap();
+        assert_eq!(recorded.peak, 3);
+        for index in 0..4 {
+            assert_eq!(state(&conn, &format!("t{index}")).0, "done");
+        }
+        let interval = |index| {
+            recorded
+                .intervals
+                .iter()
+                .find(|(task, _, _)| *task == index)
+                .map(|(_, start, end)| (*start, *end))
+                .unwrap()
+        };
+        let (_, overlap_end) = interval(0);
+        let (nested_start, _) = interval(1);
+        assert!(nested_start > overlap_end);
+        let (disjoint_start, _) = interval(2);
+        assert!(disjoint_start < overlap_end);
+        cleanup(&root);
+        cleanup(&data);
+    }
+
+    #[test]
+    fn file_scope_overlap_uses_path_segments() {
+        let scope = |paths: &[&str]| {
+            paths
+                .iter()
+                .map(|path| path.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert!(scopes_overlap(&scope(&["src"]), &scope(&["src/app.ts"])));
+        assert!(scopes_overlap(&scope(&["src/app.ts"]), &scope(&["src"])));
+        assert!(scopes_overlap(
+            &scope(&["src/app.ts"]),
+            &scope(&["src/app.ts"])
+        ));
+        assert!(!scopes_overlap(&scope(&["src"]), &scope(&["src2/app.ts"])));
+        assert!(!scopes_overlap(
+            &scope(&["src/a.ts"]),
+            &scope(&["src/b.ts"])
+        ));
+        assert!(!scopes_overlap(&scope(&[]), &scope(&["src"])));
+    }
+
+    #[test]
     fn non_git_tasks_are_sequential_in_camp_root() {
         parallel_case(3, false, 1, false, false);
+    }
+
+    #[derive(Default)]
+    struct ScopeState {
+        active: usize,
+        peak: usize,
+        entered: usize,
+        order: usize,
+        intervals: Vec<(usize, usize, usize)>,
+    }
+
+    struct ScopeRunner {
+        state: Mutex<ScopeState>,
+        changed: std::sync::Condvar,
+        width: usize,
+        root: std::path::PathBuf,
+    }
+
+    impl Runner for ScopeRunner {
+        fn run(&self, role: &str, prompt: &str, cwd: &Path) -> Result<String, String> {
+            if role == "reviewer" {
+                return Ok(r#"{"verdict":"approve","reason":"ok"}"#.into());
+            }
+            let index = prompt
+                .lines()
+                .next()
+                .unwrap()
+                .strip_prefix('T')
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            let start = {
+                let mut state = self.state.lock().unwrap();
+                state.active += 1;
+                state.peak = state.peak.max(state.active);
+                state.entered += 1;
+                state.order += 1;
+                let order = state.order;
+                state.intervals.push((index, order, 0));
+                self.changed.notify_all();
+                order
+            };
+            let (state, timeout) = self
+                .changed
+                .wait_timeout_while(
+                    self.state.lock().unwrap(),
+                    std::time::Duration::from_secs(10),
+                    |state| state.entered < self.width,
+                )
+                .unwrap();
+            assert!(!timeout.timed_out(), "disjoint scopes did not overlap");
+            drop(state);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            std::fs::write(
+                cwd.join(format!("file-{index}.txt")),
+                format!("task {index}\n"),
+            )
+            .unwrap();
+            let mut state = self.state.lock().unwrap();
+            state.active -= 1;
+            state.order += 1;
+            let end = state.order;
+            if let Some((_, _, slot)) = state
+                .intervals
+                .iter_mut()
+                .find(|(task, start_order, _)| *task == index && *start_order == start)
+            {
+                *slot = end;
+            }
+            self.changed.notify_all();
+            Ok("output".into())
+        }
+
+        fn check(&self, _: &CheckCommand, cwd: &Path) -> Result<(bool, String), String> {
+            assert_eq!(cwd, self.root);
+            Ok((true, "checked".into()))
+        }
+
+        fn stopped(&self) -> bool {
+            false
+        }
+
+        fn emit(&self, _: &TaskEvent) -> Result<(), String> {
+            Ok(())
+        }
     }
 
     #[derive(Default)]
