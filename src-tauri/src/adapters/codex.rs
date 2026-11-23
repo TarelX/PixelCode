@@ -155,7 +155,8 @@ pub(crate) fn start(
     control: &crate::supervisor::RunSlot,
     emit: &impl Fn(RunUpdate) -> Result<(), String>,
 ) -> Result<String, String> {
-    let mut child = command(&options).spawn().map_err(|error| {
+    let mut command = command(&options);
+    let mut child = crate::process_tree::spawn(&mut command).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             "无法启动 Codex：未找到 codex 命令".into()
         } else {
