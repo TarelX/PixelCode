@@ -56,14 +56,15 @@ cargo test --manifest-path src-tauri/Cargo.toml
 - 应用内不得宣称与任何第三方游戏或品牌官方相关。
 
 ## 当前状态
-骨架已搭好：Tauri 2 + React 19 + zustand + pixi.js，目录按规格 §11，7 个预设角色 YAML、`pokemon` 主题、6 个技能占位、CI。**所有业务模块仍是空占位**，从阶段 A 开始实现。
+规格已到 v0.6（`docs/PIXELCODE_SPEC.md`）。骨架与阶段 A–D 主体均已交付：SQLite（`user_version` 迁移）、CLI 探测（`adapters/{claude_code,codex}.rs` 的 `detect()`）、打开大营、军营 PixiJS 渲染、像素 UI 组件、角色/技能/主题配置、队长 plan.json + 点将/交付关卡、调度器（DAG、检查返工 ≤3、审查打回 ≤3、Git worktree 隔离 + patch 回放、最多 3 并行）、Council 对话协同、战报 PNG、中英界面、CI（Linux/Windows）。
 
-## 阶段 A 任务清单（按顺序，每项一个 PR）
-1. **SQLite 初始化**：`src-tauri/src/db.rs`，在应用数据目录创建库并建 `camps / roles / tasks / plans / artifacts / messages / app_settings` 表（规格 §10），带迁移版本号与单元测试。
-2. **CLI 探测**：`adapters/claude_code.rs`、`adapters/codex.rs` 的 `detect()`，返回 `not_found / found / found_needs_login`，Tauri command 暴露给前端；先在本机用 `--help` 确认 `claude auth status`、`codex` 的真实可用命令，再写。
-3. **打开大营**：标题屏"招募名将"→ 系统文件夹选择 → 校验是目录 → 写入 `camps` 并进入 `CampView`；记住最近 5 个路径。
-4. **军营渲染骨架**：PixiJS 画布挂进 `CampView`，320×180 逻辑分辨率整倍放大、最近邻；先用纯色图块占位画出中军帐 / 点将台 / 演武场 / 城门 / 各驻地的位置（布局见规格 §5.1）。
-5. **名将占位精灵**：按 `roles/*.yaml` 加载 7 名将，用色块占位角色站在各自驻地，播放简单待机呼吸动画；状态到动画的映射见规格 §5.2。
-6. **像素 UI 基础组件**：按钮、对话框（9-slice 风格边框）、顶栏；样式用 `src/styles/` 的调色盘变量。
+**已知缺口**集中在规格 §17「运行时健壮性」：进程树只杀顶层进程（孙进程会残留）、重启后残留 `running` 无 `interrupted` 恢复语义、无会话续接、无 `files` 写入范围、worker 规则分散在提示词里、澄清待答只在 React state、无系统通知、缺真 spawn 伪 CLI 测试。按 §17 的 P0→P1 顺序补齐即可，不要另起炉灶。
 
-阶段 A 验收：打开文件夹能看到军营俯视图，名将站在各自驻地（规格 §12）。
+## 接下来按规格 §17 的开发顺序（每项一个小 PR）
+1. **P0 进程树终止与孤儿回收**（§17.1）：进程组启动 + 两段式终止 + `PIXELCODE_PARENT` 启动回收；配套伪 CLI 真 spawn 测试（§17.9）。
+2. **P0 重启恢复语义**（§17.2）：`interrupted` 状态、启动清扫、用户显式继续、确定性 worktree 认领、集成前外部改动校验。
+3. **P1 锦囊 `files` + 调度串行**（§17.4）：plan schema、点将前校验、范围重叠串行。
+4. **P1 worker 规则信封 + `BLOCKED:` 上报**（§17.5）。
+5. **P1 会话续接**（§17.3）：先落 session id 存储，再评估 `--resume`/`exec resume` 参数（以本机 `--help` 为准）。
+6. **P1 事件与待答落库 + 系统通知**（§17.6/§17.8）。
+7. **P2** 用量/限额事件（§17.7）、CLI 版本兼容表（§8.3）。

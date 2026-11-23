@@ -1,9 +1,11 @@
 # PixelCode 开发规格
 
-版本：0.5
-日期：2026-11-21（Asia/Singapore，UTC+8）  
+版本：0.6  
+日期：2026-11-23（Asia/Singapore，UTC+8）  
 状态：可直接按本文实现 v1  
 本文是给实现者的开发规格，不是营销文案。实现时以本文为准；本文未写的功能一律不做。
+
+v0.6 变更：新增 §17 运行时健壮性要求（进程树终止、重启恢复、中断/失败区分、会话续接、写入范围调度、worker 规则信封、集成前校验、事件持久化、系统通知、测试策略）；§9.3 适配器接口改为现行 headless JSONL 形态；§8.3 探测区分"已安装 / 已登录 / 版本兼容"；§10 任务状态增加 `interrupted`；§7.2 锦囊增加 `files` 写入范围字段。
 
 ---
 
@@ -56,7 +58,7 @@ PixelCode 是一个本地桌面应用：用原创像素角色组成的"AI 团队
 | 角色（Role） | 一个 Agent 人设，包含：人设提示词、技能列表、武器槽（绑定哪个 CLI）。 |
 | 武器槽（Loadout） | 角色可用的 CLI + 模型组合，如"Claude Code + sonnet"。 |
 | 技能（Skill） | 角色挂载的能力包，如设计规范、前端组件库用法、测试规范。 |
-| 锦囊（Task Card） | 队长拆解出的一个具体任务，写明角色、依赖、输入、输出、验收标准、检查命令。 |
+| 锦囊（Task Card） | 队长拆解出的一个具体任务，写明角色、依赖、输入、输出、验收标准、检查命令、`files` 写入范围（§17.4）。 |
 | 队长（Captain） | 一个特殊角色（诸葛亮），负责把用户需求拆成锦囊，或在手动模式下协助分配。 |
 | 调度器（Scheduler） | 本应用的核心程序，负责按依赖执行任务、运行检查、触发审查、管理 git。 |
 | 产物（Artifact） | 角色之间交接的文件，如 design.md、api-contract.md、diff、review.md。 |
@@ -198,7 +200,7 @@ themes/
    ↓
 【点将】用户审阅锦囊与名将分配，可修改，可批准
    ↓
-调度器按依赖执行任务（Git 大营中独立任务在 worktree 内并行，最多 3 个；非 Git 大营顺序执行）
+调度器按依赖执行任务（Git 大营中独立任务在 worktree 内并行，最多 3 个；非 Git 大营顺序执行）。任务卡可声明 `files` 写入范围（见 §17.4），范围重叠的任务即使无依赖也串行执行。
    ↓  每个任务：
    ├─ 调度器启动角色进程（claude -p / codex exec）
    ├─ 角色读取输入产物，执行任务，写输出产物
@@ -242,7 +244,7 @@ v1 不实现，但数据模型和角色系统要预留扩展点。
 
 - `scenario`：任务类型标签（bug-fix / new-project / refactor / research / custom……仅用于展示和统计，不驱动流程）
 - `recruited_roles`：本次任务启用哪些名将（不要求全员出动；也可以临时招募名册外角色）
-- `tasks`：锦囊列表，每个锦囊写明负责名将、依赖、输入产物、输出产物、验收标准、检查命令
+- `tasks`：锦囊列表，每个锦囊写明负责名将、依赖、输入产物、输出产物、验收标准、检查命令、`files` 写入范围（见 §17.4）
 
 队长可以向用户提问（澄清需求），也可以在用户说"你来定"时自行决定。
 
@@ -333,12 +335,15 @@ v1 不实现，但数据模型和角色系统要预留扩展点。
 
 ### 8.3 探测
 
-启动时和进入设置时扫描 `PATH`：
-- 检查 CLI 是否存在。
-- 检查是否已登录（用无害命令，如 `claude auth status`、`codex --version`）。
-- 显示"已找到 / 未找到 / 已找到但未登录"。
+启动时和进入设置时扫描 `PATH`。检测分三件事，UI 分别展示，不合并成一个布尔值：
 
-未找到任何 CLI 时，打开大营后界面可用，但新建任务会被拦截，并给出安装文档链接。
+- **已安装**：`PATH` 中找到可执行文件（或用户配置的显式路径）。
+- **已登录**：用无害命令确认会话有效，如 `claude auth status --json` 的 `loggedIn`、`codex login status` 的 `Logged in using ...`。
+- **版本兼容**：当前 CLI 版本是否在该适配器已验证的参数集内。适配器维护一份已验证版本/能力表；不在表内时标记"未验证"并给出保守提示，不静默按旧参数启动。
+
+显示"已找到 / 未找到 / 已找到但未登录 / 版本未验证"。未找到任何 CLI 时，打开大营后界面可用，但新建任务会被拦截，并给出安装文档链接。
+
+新增第三个 CLI 之前，必须先把各适配器的版本/能力、会话生命周期、目录探测、用量上报、审批处理抽成统一的 adapter trait（见 §9.3 与 §17），不允许再长出第二种传输形态。
 
 ### 8.4 未来扩展
 
@@ -356,7 +361,7 @@ v1 不实现，但数据模型和角色系统要预留扩展点。
 - 状态：Zustand
 - 军营渲染：HTML Canvas 或 PixiJS（推荐 PixiJS，最近邻缩放）
 - 本地数据：SQLite（Tauri 插件或 Rust）
-- 进程管理：Rust 侧管理 CLI 进程（`portable-pty` 或等价库），通过 Tauri event 把输出流到前端
+- 进程管理：Rust 侧用 `std::process::Command` 启动 CLI 子进程，stdin 传任务、stdout/stderr 逐行解析 JSONL/JSON 事件，经 Tauri event 把流式更新推到前端。**不用 PTY**：本应用只做 headless 单轮执行，不需要伪终端；需要会话续接时按 §17.3 走 CLI 自己的 resume 参数。
 - Git：调用系统 `git`，不自己实现
 
 ### 9.2 进程边界
@@ -374,11 +379,11 @@ v1 不实现，但数据模型和角色系统要预留扩展点。
 │  - ThemeRegistry (主题皮肤)              │
 │  - SkillRegistry (技能配置)              │
 │  - Scheduler (任务调度、检查、审查)       │
-│  - AgentSupervisor (spawn/pty/kill)     │
+│  - RunSlot/supervisor (spawn/kill 进程树) │
 │  - AdapterRegistry (CLI 适配器)          │
 │  - GitService (worktree/branch/diff)    │
 └──────────────▲──────────────────────────┘
-               │ child process, cwd=worktree
+               │ child process, cwd=worktree, stdin/stdout JSONL 事件流
 ┌──────────────▼──────────────────────────┐
 │  用户已安装的 CLI                       │
 │  claude / codex                         │
@@ -387,20 +392,23 @@ v1 不实现，但数据模型和角色系统要预留扩展点。
 
 ### 9.3 适配器接口
 
-```ts
-interface AgentAdapter {
-  id: "claude-code" | "codex";
-  displayName: string;
-  detect(): Promise<DetectResult>;
-  start(opts: StartOptions): Promise<void>; // cwd, cols, rows, systemPrompt, skills, permissions
-  write(sessionId: string, input: string): Promise<void>;
-  approve(sessionId: string, decision: "approve" | "reject"): Promise<void>;
-  resize(sessionId: string, cols: number, rows: number): Promise<void>;
-  stop(sessionId: string): Promise<void>;
-}
+适配器是纯函数式的协议模块：把 CLI 的 argv/stdin 协议与结构化事件解析封装在一起，调度器只面对统一的事件类型。现行形态（每个适配器一个文件，禁止巨型 switch）：
+
+```rust
+// src-tauri/src/adapters/<cli>.rs
+pub fn detect() -> DetectResult;                 // 已安装 / 已登录 / 版本兼容三态
+pub(crate) fn start(
+    options: StartOptions<'_>,                   // cwd, model, system_prompt, prompt, permissions
+    control: &RunSlot,                           // 进程注册 + 停止/终止入口
+    emit: &impl Fn(RunUpdate) -> Result<(), String>,
+) -> Result<String, String>;                     // 返回最终文本
 ```
 
-每个适配器单独一个文件，禁止把所有 CLI 的参数解析写在一个巨大 switch 里。
+- 启动参数逐个传递，任务内容走 stdin，**不进 argv**；禁止 `shell: true` / 字符串拼接。
+- 事件流统一为 `RunUpdate`：`Started / Text / Tool / Waiting / Completed / Stopped / Failed`；后续按 §17.7 扩展 `usage_limited` / `turn_metrics` 等变体。
+- 每个适配器必须有 fixture 测试：`tests/adapters/fixtures/` 放登录探测 JSON 与启动 JSONL 样本（成功、错误、畸形行），断言解析出的事件序列与最终文本。
+- 不认识的事件类型必须安全跳过（向前兼容 CLI 新增事件），不允许 panic。
+- 适配器只做协议翻译：权限由角色 `permissions` 映射为 CLI 参数（Claude `--allowedTools/--disallowedTools`、Codex `--sandbox`），不在适配器里发明第二套权限模型。
 
 ### 9.4 安全
 
@@ -449,7 +457,7 @@ SQLite 建议表（字段名保持英文）：
 - `output_artifacts` TEXT NULL（JSON 数组）
 - `acceptance_criteria` TEXT NOT NULL
 - `check_command` TEXT NULL
-- `status` TEXT NOT NULL（pending, running, checking, reviewing, done, blocked, failed）
+- `status` TEXT NOT NULL（pending, running, checking, reviewing, done, blocked, failed, interrupted）
 - `attempts` INTEGER DEFAULT 0
 - `review_rounds` INTEGER DEFAULT 0
 - `created_at` INTEGER
@@ -666,6 +674,7 @@ pixelcode/
 | 是否自动标记完成 | 否，必须用户确认 |
 | 是否内置付费模型 | 否 |
 | worktree 位置 | 应用数据目录，不放进仓库 |
+| 重启后残留 running 任务 | 标记 `interrupted`，绝不自动重跑；恢复只认用户显式操作（§17.2） |
 | 项目名 | PixelCode（包名 `pixelcode`，MIT） |
 | 场景主题 | 军营（非办公室），主题包配置化 |
 | 角色阵容 | 三国名将 7 人，角色为配置文件，随时可换 |
@@ -674,3 +683,69 @@ pixelcode/
 | 国际化 | 主题包预留 generic-heroes；v1 仅 three-kingdoms |
 
 如果产品负责人另有指示，以新指示覆盖本表，并改规格版本号。
+
+---
+
+## 17. 运行时健壮性（v1 必须实现）
+
+本节把"跑得稳"变成可验收的硬要求。原则：**任何不确定都保守处理——保留现场、阻塞并交给用户决定，绝不自动重放副作用。**
+
+### 17.1 进程树终止与孤儿回收（P0）
+
+- 每个 Agent/检查子进程必须在独立进程组中启动（Unix `setpgid`/`process_group`；Windows `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`），`RunSlot::stop/terminate` 对**整个进程组**做两段式终止：先 SIGTERM（Windows `taskkill /T`），超时后 SIGKILL（`taskkill /T /F`）。只杀顶层进程会让 Agent 拉起的 `npm test`、dev server 变成孤儿，禁止。
+- 每个子进程带 `PIXELCODE_PARENT=<pid>` 环境标记。应用启动时扫描并回收上次崩溃遗留的带标记孤儿进程（先 SIGTERM 再 SIGKILL）；标记不得出现在用户自己启动的同名 CLI 进程上——只回收进程组归属可判定的本应用后代。
+
+### 17.2 重启恢复与中断语义（P0）
+
+- 任务状态机区分 `interrupted`（用户停止或应用退出导致）与 `failed`（CLI/检查/审查真实失败）。应用启动时把数据库中残留的 `running / checking / reviewing` 任务置为 `interrupted`，计划卡置为 `aborted`；UI 显示"上次运行被中断"并给出恢复入口。
+- 恢复只认用户显式操作：用户可对计划卡点"继续"，调度器从最近一个 `done` 任务之后重排剩余 DAG；**绝不自动重跑**，更不自动重放已批准的 git commit/merge。
+- worktree 目录名必须由 `plan_id + task_id` 确定性生成，崩溃后可按同名重新认领；发现目录残留但数据库无对应记录时列为"待清理"诊断项展示给用户，不自动强删。
+- 集成前校验：应用 patch 前，比较主目录中本任务声明范围内的文件自快照以来是否被外部修改；是则 `blocked` 并保留 worktree 与补丁，不猜测如何合并。
+
+### 17.3 会话续接（P1）
+
+- 适配器从 CLI 输出中提取会话标识并存库（Claude `session_id`、Codex thread/rollout id），随任务记录保存；返工（检查失败、审查打回）与队长澄清续接优先用 CLI 自身的 resume 机制（`claude --resume <id>` / `codex exec resume`），不靠提示词重述全部上下文。
+- resume 前先 `--help` 与官方文档确认当前版本参数，参数随 §8.3 版本兼容表维护；探测不到可续接会话时退回全新会话，并在提示词中附上产物引用。
+- 评审/审查会话保持全新独立会话（只读边界不变）；不为续接去掉 Codex `--ephemeral` 之外的隔离参数。
+
+### 17.4 锦囊写入范围 `files`（P1）
+
+- 队长计划的每个任务可带 `files`：项目相对路径数组，声明该任务预期写入的文件范围。路径必须是相对路径，拒绝绝对路径、`..`、`\`、`:` 与空值；非法计划在点将前校验拒绝。
+- 调度器用 `files` 做事前冲突控制：范围重叠（含目录前缀包含）的任务即使无依赖也串行执行，与 `MAX_PARALLEL` 取交集。
+- `files` 是调度提示与集成前校验的依据，不是安全边界；越界写入仍由 worktree/patch 与 §17.5 的规则信封约束。
+
+### 17.5 Worker 规则信封（P1）
+
+- 每个执行角色的运行提示词在任务正文之后追加固定规则块（所有角色共用一份，放 `roles.rs` 或独立配置，不逐角色复制）：只写 `files` 声明范围、不 `git commit/push`、不切分支、不安装依赖、不做全仓格式化；需要超出权限或范围的操作时，以 `BLOCKED: <原因>` 结束并停止，而不是失败硬闯。
+- 队长与审查员有各自的只读/规划规则块；审查员保持"最后仅一行 verdict JSON"契约不变。
+- 现有 CLI 硬限制（`--disallowedTools`、Codex `--sandbox`）保留，规则信封是叠加层：让 Agent 主动上报"需扩权"成为 `blocked` 状态的一种可读原因，而不是无声失败。
+
+### 17.6 事件与待答持久化（P1）
+
+- 新增 `run_events` 表：`run_id`、`seq`（跑次内递增）、`kind`、`task_id`、`payload_json`、`created_at`；Tauri event 只作"有新事件"的提示，前端按 `seq` 拉取增量，关窗重开可补读。
+- 队长澄清的待答（`questions` + `answer`）落库为待答记录（`pending_questions`），带幂等答复键；重复/迟到回答只生效一次，UI 断开不丢问题。
+- messages 表继续只存人类可读摘要；`run_events` 存机器可重放的事件流，两者不混用。
+
+### 17.7 事件模型扩展（P2）
+
+- `RunUpdate` 增加 `usage_limited{resets_at}` 与 `turn_metrics{input/output/cache tokens}` 变体；适配器能解析就解析，解析不到就不发，不编造数值。军营场景可显示"伙伴休息到 xx:xx"，战报可统计用量。
+- 审批/提问类事件（工具被权限拒绝、Agent 提问）作为 `needs_input` 语义投递给队长或用户展示，不允许静默吞掉。
+
+### 17.8 系统通知（P1）
+
+- 用户可选开启（`app_settings` 开关）：仅在窗口不在前台时，以下事件各发一条系统通知——需要回答、任务被阻塞、计划待交付、运行失败。
+- 按持久事件 ID 去重（同一事件不重复弹），点击通知跳回对应跑次/锦囊；窗口可见时静默。通知正文不含提示词与代码内容。
+
+### 17.9 测试策略（P0–P1）
+
+- **P0**：新增一个跨平台伪 CLI 进程测试——真 `spawn` 一个测试夹具程序，走完 stdin 写入、分段 JSONL、stderr、异常退出、stop-before-spawn，断言事件序列与进程树清理。
+- **P1**：以固定时钟回放一条"澄清 → 批准 → 检查失败重试 → 审查打回 → 中断/恢复"完整时间线，断言任务状态迁移、产物、worktree 与通知意图；沿用现有 `Fake Runner` + fixture 思路，不依赖真实账号。
+- 真实 CLI / 原生 GUI 冒烟标记为 opt-in（本机手动跑），CI 不要求登录账户；Linux 与 Windows 都要过，断言路径分隔符用 `Path` 语义而非 `'/'`。
+
+### 17.10 明确不做
+
+- 不引入 PTY/daemon sidecar/远程同步/多 provider 扩张；"退出窗口后继续跑"若成为需求，另立规格评估本地 sidecar，不在 v1 范围。
+- 不自动重试已失败任务、不自动合并、不自动标记完成（与 §7.4、§16 一致）。
+
+---
+
