@@ -198,6 +198,7 @@ pub(crate) enum RunUpdate {
     Tool { name: String },
     Waiting,
     Completed,
+    Blocked { message: String },
     Stopped,
     Failed { message: String },
 }
@@ -290,11 +291,21 @@ pub async fn start_role_run(
             emit(RunUpdate::Stopped)?;
             return Ok(None);
         }
+        enum Outcome {
+            Done,
+            Waiting(Vec<String>),
+            Blocked(String),
+        }
         let result = result.and_then(|final_text| {
+            if let Some(reason) = roles::blocked_reason(&final_text) {
+                return Ok(Outcome::Blocked(reason));
+            }
             let plan = if let Some(roster) = &roster {
                 match plans::parse(&final_text, roster, clarification.as_ref())? {
                     plans::Reply::Draft(plan) => Some(plan),
-                    plans::Reply::Clarify(reply) => return Ok(Some(reply.questions)),
+                    plans::Reply::Clarify(reply) => {
+                        return Ok(Outcome::Waiting(reply.questions));
+                    }
                 }
             } else {
                 None
@@ -322,16 +333,20 @@ pub async fn start_role_run(
                     &output.borrow(),
                 )?
             });
-            Ok(None)
+            Ok(Outcome::Done)
         });
         match result {
-            Ok(questions) => {
-                emit(if questions.is_some() {
-                    RunUpdate::Waiting
-                } else {
-                    RunUpdate::Completed
-                })?;
-                Ok(questions)
+            Ok(Outcome::Blocked(message)) => {
+                emit(RunUpdate::Blocked { message })?;
+                Ok(None)
+            }
+            Ok(Outcome::Done) => {
+                emit(RunUpdate::Completed)?;
+                Ok(None)
+            }
+            Ok(Outcome::Waiting(questions)) => {
+                emit(RunUpdate::Waiting)?;
+                Ok(Some(questions))
             }
             Err(message) => {
                 let _ = emit(RunUpdate::Failed {

@@ -124,7 +124,7 @@
   "taskDismiss": "收起输出",
   "taskWaiting": "等待输出…",
   "taskTool": "工具",
-  "runStates": { "running": "执行中", "waiting": "等待澄清", "completed": "已完成", "failed": "! 执行失败", "stopped": "已停止" },
+  "runStates": { "running": "执行中", "waiting": "等待澄清", "completed": "已完成", "failed": "! 执行失败", "blocked": "受阻", "stopped": "已停止" },
   "planTitle": "拟定方案",
   "planPrompt": "任务需求",
   "planPlaceholder": "描述遇到的问题、预期结果或项目目标…",

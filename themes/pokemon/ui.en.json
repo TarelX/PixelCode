@@ -124,7 +124,7 @@
   "taskDismiss": "Dismiss output",
   "taskWaiting": "Waiting for output…",
   "taskTool": "Tool",
-  "runStates": { "running": "Running", "waiting": "Awaiting clarification", "completed": "Done", "failed": "! Task failed", "stopped": "Stopped" },
+  "runStates": { "running": "Running", "waiting": "Awaiting clarification", "completed": "Done", "failed": "! Task failed", "blocked": "Blocked", "stopped": "Stopped" },
   "planTitle": "Draft a plan",
   "planPrompt": "Request",
   "planPlaceholder": "Describe the problem, expected outcome or project goal…",

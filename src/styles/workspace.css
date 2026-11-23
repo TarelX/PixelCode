@@ -114,7 +114,7 @@ button:disabled { cursor: not-allowed; }
 .feed-message__heading { display: flex; align-items: center; gap: 10px; }
 .feed-message__heading strong { font-size: 12px; color: var(--text-light); font-weight: 600; }
 .run-label { color: var(--ui-muted); font-size: 10px; background: var(--ui-surface); padding: 1px 6px; }
-.run-label--running, .run-label--waiting { color: var(--ui-warning); }
+.run-label--running, .run-label--waiting, .run-label--blocked { color: var(--ui-warning); }
 .run-label--completed { color: var(--ui-success); }
 .run-label--failed { color: var(--ui-error); }
 .feed-dismiss { margin-left: auto; padding: 0 5px; color: var(--ui-muted); background: transparent; border: 0; cursor: pointer; }
@@ -188,7 +188,7 @@ button:disabled { cursor: not-allowed; }
 .role-edit .pixel-icon { width: 12px; height: 12px; }
 .role-roster__new { margin: 10px 18px 16px; width: calc(100% - 36px); padding: 7px; font-size: 11px; background: transparent; border-style: dashed; }
 .run-dot--idle, .run-dot--stopped { background: #7f8979; }
-.run-dot--running, .run-dot--waiting { background: var(--ui-warning); }
+.run-dot--running, .run-dot--waiting, .run-dot--blocked { background: var(--ui-warning); }
 .run-dot--completed { background: var(--ui-success); }
 .run-dot--failed { background: var(--ui-error); }
 .team-artifacts h3 { display: flex; justify-content: space-between; }
