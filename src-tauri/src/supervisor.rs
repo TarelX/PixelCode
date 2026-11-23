@@ -14,7 +14,7 @@ use tauri::{Emitter, Manager, WebviewWindow};
 
 use crate::{
     adapters::{claude_code, codex},
-    artifacts, camps, plans, roles,
+    artifacts, camps, plans, process_tree, roles,
 };
 
 const ROLE_RUN_EVENT: &str = "role-run";
@@ -54,10 +54,10 @@ impl RunSlot {
         self.stopped.load(Ordering::SeqCst)
     }
 
-    pub fn attach(&self, mut process: Child) -> Result<(), String> {
+    pub fn attach(&self, process: Child) -> Result<(), String> {
         let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
         if self.stopped.load(Ordering::SeqCst) {
-            let _ = process.kill();
+            process_tree::terminate(&[process.id()]);
         }
         child.insert(thread::current().id(), process);
         Ok(())
@@ -82,32 +82,40 @@ impl RunSlot {
     }
 
     pub fn stop(&self) -> Result<(), String> {
-        let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
-        if self.active.try_lock().is_err() {
-            self.stopped.store(true, Ordering::SeqCst);
-        }
+        let mut pids = Vec::new();
+        let mut running = false;
         let mut error = None;
-        for child in child.values_mut() {
-            match child.try_wait() {
-                Ok(Some(_)) => (),
-                Ok(None) => {
-                    self.stopped.store(true, Ordering::SeqCst);
-                    if let Err(e) = child.kill() {
-                        error = Some(format!("无法停止角色：{e}"));
+        {
+            let mut child = self.child.lock().map_err(|_| "无法访问角色进程")?;
+            let active = self.active.try_lock().is_err();
+            for child in child.values_mut() {
+                match child.try_wait() {
+                    Ok(Some(_)) => (),
+                    Ok(None) => {
+                        running = true;
+                        pids.push(child.id());
                     }
+                    Err(e) => error = Some(e.to_string()),
                 }
-                Err(e) => error = Some(e.to_string()),
+            }
+            if running || active {
+                self.stopped.store(true, Ordering::SeqCst);
             }
         }
+        process_tree::terminate(&pids);
         error.map_or(Ok(()), Err)
     }
 
     pub fn terminate(&self) {
+        let mut pids = Vec::new();
         if let Ok(mut children) = self.child.lock() {
             for child in children.values_mut() {
-                let _ = child.kill();
+                if !matches!(child.try_wait(), Ok(Some(_))) {
+                    pids.push(child.id());
+                }
             }
         }
+        process_tree::terminate(&pids);
     }
 }
 
@@ -135,16 +143,19 @@ mod tests {
                 let stopped = &stopped;
                 scope.spawn(move || {
                     #[cfg(unix)]
-                    let child = std::process::Command::new("sleep")
-                        .arg("30")
-                        .spawn()
-                        .unwrap();
+                    let child = {
+                        let mut command = std::process::Command::new("sleep");
+                        command.arg("30");
+                        process_tree::spawn(&mut command).unwrap()
+                    };
                     #[cfg(windows)]
-                    let child = std::process::Command::new("ping")
-                        .args(["-n", "30", "127.0.0.1"])
-                        .stdout(std::process::Stdio::null())
-                        .spawn()
-                        .unwrap();
+                    let child = {
+                        let mut command = std::process::Command::new("ping");
+                        command
+                            .args(["-n", "30", "127.0.0.1"])
+                            .stdout(std::process::Stdio::null());
+                        process_tree::spawn(&mut command).unwrap()
+                    };
                     slot.attach(child).unwrap();
                     ready.wait();
                     stopped.wait();
@@ -168,13 +179,12 @@ mod tests {
             if early {
                 slot.stop().unwrap();
             }
-            slot.attach(
-                std::process::Command::new("sleep")
-                    .arg("30")
-                    .spawn()
-                    .unwrap(),
-            )
-            .unwrap();
+            let child = {
+                let mut command = std::process::Command::new("sleep");
+                command.arg("30");
+                process_tree::spawn(&mut command).unwrap()
+            };
+            slot.attach(child).unwrap();
             if !early {
                 slot.stop().unwrap();
             }

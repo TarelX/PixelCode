@@ -526,13 +526,14 @@ impl<R: Runner> Execution<'_, R> {
 }
 
 fn check(command: &CheckCommand, cwd: &Path, slot: &RunSlot) -> Result<(bool, String), String> {
-    let mut child = Command::new(&command.program)
+    let mut process = Command::new(&command.program);
+    process
         .args(&command.args)
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    let mut child = crate::process_tree::spawn(&mut process)
         .map_err(|e| format!("无法启动检查命令 {}：{e}", command.program))?;
     let mut stdout = child.stdout.take().ok_or("无法读取检查输出")?;
     let mut stderr = child.stderr.take().ok_or("无法读取检查错误输出")?;

@@ -6,6 +6,7 @@ mod conversation;
 mod db;
 mod git;
 mod plans;
+mod process_tree;
 mod roles;
 mod scheduler;
 mod settings;
@@ -43,12 +44,18 @@ pub fn run() {
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            process_tree::reap_orphans(&data_dir);
             let connection = db::open(&data_dir)?;
             app.manage(artifacts::ArtifactRoot(data_dir.join("artifacts")));
             app.manage(Mutex::new(connection));
             app.manage(supervisor::RunSlot::default());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<supervisor::RunSlot>().terminate();
+            }
+        });
 }
